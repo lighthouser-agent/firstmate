@@ -236,6 +236,7 @@ Route durable knowledge to its most specific owner:
 - Task-scoped notes belong with the backlog item, and investigation findings belong in the scout report.
 - Knowledge useful to almost every contributor to one project belongs in that project's committed `AGENTS.md`.
 - Knowledge general to every firstmate user belongs in this repo's shared tracked surface.
+- Reusable work methods with clear trigger conditions belong in an appropriate skill through that skill's normal delivery path; Firstmate skill changes use a branch, no-mistakes, PR, and captain-merge path.
 
 Firstmate never writes a project's `AGENTS.md` directly.
 A crewmate creates or updates it lazily through the project's selected delivery path, using `bin/fm-ensure-agents-md.sh` and preferring pointers to authoritative sources over copied detail.

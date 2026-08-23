@@ -1,10 +1,10 @@
 ---
 name: stow
-description: Sweep the current conversation for durable knowledge - user preferences, project facts, operational gotchas, standing decisions, and unfinished next steps - and file each through explicit instructions, existing local conventions, or the private `.stow-notes.md` fallback, curating the destination files as it writes. Use when the user invokes /stow, asks to save or write down what was learned this session, or before a context reset or long break.
+description: Sweep the current conversation for durable knowledge - user preferences, project facts, operational gotchas, standing decisions, and unfinished next steps - and file each through explicit instructions, existing local conventions or skills, or the private `.stow-notes.md` fallback, curating the destination files as it writes. Use when the user invokes /stow, asks to save or write down what was learned this session, or before a context reset or long break.
 user-invocable: true
 ---
 
-<!-- maintainers: this is the public, installer-facing skill. Keep it standalone, with no private project paths, tool assumptions, or environment branching. The firstmate-internal counterpart lives at .agents/skills/stow/SKILL.md - deliberately a separate file with no shared code. Keep them independent. -->
+<!-- maintainers: this is the public, installer-facing skill. Keep it standalone, with no private project paths, tool assumptions, or environment branching. The internal counterpart is maintained separately with no shared code. Keep them independent. -->
 
 # stow
 
@@ -36,6 +36,7 @@ Everything files to a local destination by default; an external system such as a
       This is the *only* path to an external or public system such as an issue tracker, hosted project board, or ticketing system.
       A configured git host remote, a `.github`/`.gitlab` folder, or any other signal that a tracker probably exists is never by itself grounds to file anything there - never route externally on inference.
    2. **Otherwise - the local convention the project or user already has.** The discovered project memory file for project facts, operational gotchas, and standing decisions; an existing `TODO`/`BACKLOG`/`NOTES` file for undone next steps; a discovered user-level memory file for user preferences *when one happens to be accessible* - a bonus if reachable, never an assumption or a requirement.
+      A reusable work method with a clear trigger belongs in an existing skill that owns that trigger.
       This is the only tier that writes findings into a tracked, shared file or outside the current directory, and only because the user already established that destination.
    3. **Fallback - `.stow-notes.md` in the current directory, for every finding-kind.** When no existing convention fits, don't improvise a location or invent an ad hoc filename.
       In a git worktree, first verify `.stow-notes.md` is not already tracked in the index; if it is tracked, do not write private findings there - report that the fallback is blocked until the user chooses a safe destination.
@@ -53,7 +54,8 @@ Everything files to a local destination by default; an external system such as a
 
 5. **Write only into locations that already exist as a real convention, the step-3 fallback (plus its `.gitignore` line), or a destination the user just approved in step 4.**
    Do not invent new shared files, new folders, or new tracker categories the project doesn't already have.
-   Never store, create, or edit a skill as a destination for a finding: there is no "graduate this to a skill" move, even in a repo whose existing `.claude/skills/` or `skills/` directory makes one look like a convention.
+   For a reusable method, use the skill that owns its trigger and follow that skill's normal delivery path for tracked changes rather than editing it in place during `/stow`.
+   Keep the source finding until the skill change lands, then replace it with a one-line pointer to the skill and rerun the curation pass.
    If the fallback is unwritable and the user doesn't want a new convention, say so plainly and leave that finding unfiled rather than fabricate a destination.
 
 6. **Read the destination before writing: inspect-then-update, never blind-append.**
@@ -67,7 +69,7 @@ Everything files to a local destination by default; an external system such as a
    Prefer one concise current rule, or a pointer to the authoritative source, over duplicate prose.
    The counterweight: never remove a unique current fact unless it is preserved elsewhere by a stronger owner.
    This is an accuracy discipline, not a length target - a stale entry misleads the next session; a current one earns its place.
-   A `.stow-notes.md` note has exactly three exits: promotion into a shared, tracked file the user approves, folding into a discovered user-level memory file, or deletion as stale - do not invent another.
+   A `.stow-notes.md` note has exactly these exits: promotion into a shared, tracked file the user approves, promotion into a skill through that skill's normal delivery path, folding into a discovered user-level memory file, or deletion as stale - do not invent another.
 
 8. **Finish with an honest safe-to-end verdict and a resume pointer for the next session.**
    Report one action per file this sweep touched or considered: `unchanged`, `added`, `rewritten`, `pruned`, or `routed` (the finding went to a different owner).
