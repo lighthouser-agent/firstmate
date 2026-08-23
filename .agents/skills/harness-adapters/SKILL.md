@@ -224,7 +224,8 @@ This is why the validation trigger (`$no-mistakes`) to a codex crew now lands on
 
 Directory trust dialog on first run per repo root: "Do you trust the contents of this directory?"
 Accept with Enter.
-The decision persists for the repo, so later worktrees of the same project skip it.
+Trust may persist for the repository path or a previously approved pool slot, but every newly allocated worktree pool slot can prompt again.
+After every spawn, immediately peek the pane and handle all trust or approval prompts before waiting on downstream work.
 
 Resume after exit with `codex resume <session-id>`.
 The session id is printed on quit.
