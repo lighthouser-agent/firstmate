@@ -54,7 +54,7 @@ A red deployment job does not prove that deployment failed: expand the job and d
 
 If a run cannot mint a usable PR, custody is stranded, or the gate rejects a non-fast-forward ref, rerun the same commit from a new branch and new PR, then close the replaced PR with the replacement noted.
 For late changes, follow the cancellation and custody sequence in [`AGENTS.md`](AGENTS.md), and rebuild on the head pushed by the pipeline rather than on an old local baseline.
-Inspect PR contents from `refs/pull/<n>/head` or `gh-axi api .../pulls/<n>/files` because the pipeline pushes its own `no-mistakes` remote and `origin/fm/<branch>` may not exist.
+The pull request files API is paginated: retrieve it completely with `gh-axi api --paginate .../pulls/<n>/files`, or inspect `refs/pull/<n>/head`, because the pipeline pushes its own `no-mistakes` remote and `origin/fm/<branch>` may not exist.
 `gh-axi pr diff` can omit part of a large change, so use the file list or pull-head ref when completeness matters.
 
 ## Repo conventions
