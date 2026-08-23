@@ -64,8 +64,10 @@ Never describe the session as reset-safe while the memory total is over budget o
    - File each undone next step as a queued backlog item with a genuine `blocked-by` dependency when applicable.
 4. **Use inspect-then-update.**
    For every retained fact, ask which current statement it supersedes, whether it can be a one-sentence rewrite, and whether a stale entry should be deleted, retired, or routed to an existing stronger owner.
-   The only graduation moves are promotion to tracked shared material through a PR, folding a learning into the captain-preference destination selected by AGENTS.md, or deletion of a stale entry.
-   Do not invent another graduation path.
+   Reusable work methods with clear trigger conditions may graduate to an appropriate skill through that skill's normal branch, no-mistakes, PR, and captain-merge path.
+   A finding routed to a project `AGENTS.md`, shared tracked material, or a skill remains in local memory until the destination change has landed.
+   Only after it lands may the source entry become a one-line pointer to its authoritative owner, followed by another budget report.
+   Delete a stale entry only when no durable fact would be lost.
 
 ## Completion receipt
 
@@ -107,8 +109,8 @@ Extend the completion receipt with one entry per secondmate alongside the primar
 Keep those entries in the same plain captain-facing language the rest of the receipt uses.
 The session is reset-safe only when every home is within its own budget with no unresolved exception.
 
-## Scope exclusion: no skill storage
+## Skills as a destination
 
-`/stow` must never store, create, or edit a skill as a destination for any finding.
-There is no "graduate this to a skill" move in this skill's routing.
-Until a human deliberately scopes a skill change as Firstmate repository work, route generalizable knowledge to shared tracked material through its pipeline and fleet-local knowledge to `data/`, never to `.agents/skills/` or public `skills/`.
+Reusable work methods with clear trigger conditions belong in an appropriate skill when the method is useful beyond one task or project.
+Route a Firstmate skill change through the normal branch, no-mistakes, PR, and captain-merge path; `/stow` does not edit a skill in place.
+Keep the source finding until that change lands, then replace it with a one-line pointer to the skill and rerun the memory-budget report.

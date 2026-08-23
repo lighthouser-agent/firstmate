@@ -36,6 +36,7 @@ Everything files to a local destination by default; an external system such as a
       This is the *only* path to an external or public system such as an issue tracker, hosted project board, or ticketing system.
       A configured git host remote, a `.github`/`.gitlab` folder, or any other signal that a tracker probably exists is never by itself grounds to file anything there - never route externally on inference.
    2. **Otherwise - the local convention the project or user already has.** The discovered project memory file for project facts, operational gotchas, and standing decisions; an existing `TODO`/`BACKLOG`/`NOTES` file for undone next steps; a discovered user-level memory file for user preferences *when one happens to be accessible* - a bonus if reachable, never an assumption or a requirement.
+      A reusable work method with a clear trigger belongs in an existing skill that owns that trigger.
       This is the only tier that writes findings into a tracked, shared file or outside the current directory, and only because the user already established that destination.
    3. **Fallback - `.stow-notes.md` in the current directory, for every finding-kind.** When no existing convention fits, don't improvise a location or invent an ad hoc filename.
       In a git worktree, first verify `.stow-notes.md` is not already tracked in the index; if it is tracked, do not write private findings there - report that the fallback is blocked until the user chooses a safe destination.
@@ -53,7 +54,8 @@ Everything files to a local destination by default; an external system such as a
 
 5. **Write only into locations that already exist as a real convention, the step-3 fallback (plus its `.gitignore` line), or a destination the user just approved in step 4.**
    Do not invent new shared files, new folders, or new tracker categories the project doesn't already have.
-   Never store, create, or edit a skill as a destination for a finding: there is no "graduate this to a skill" move, even in a repo whose existing `.claude/skills/` or `skills/` directory makes one look like a convention.
+   For a reusable method, use the skill that owns its trigger and follow that skill's normal delivery path for tracked changes rather than editing it in place during `/stow`.
+   Keep the source finding until the skill change lands, then replace it with a one-line pointer to the skill and rerun the curation pass.
    If the fallback is unwritable and the user doesn't want a new convention, say so plainly and leave that finding unfiled rather than fabricate a destination.
 
 6. **Read the destination before writing: inspect-then-update, never blind-append.**
