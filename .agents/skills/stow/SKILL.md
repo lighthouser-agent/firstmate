@@ -48,24 +48,16 @@ Never describe the session as reset-safe while the memory total is over budget o
 1. **Sweep the session for uncaptured durable knowledge.**
    Look for operational learnings, captain preferences expressed in passing, project-intrinsic facts, standing decisions, and undone next steps.
 2. **Route each finding using AGENTS.md's knowledge-routing table.**
-   AGENTS.md section 6 is the source of truth for destinations.
-   Do not re-derive or duplicate that mapping here.
+   AGENTS.md section 6 is the sole owner of the complete destination and delivery-path mapping; this skill defines only the sweep, curation, handoff, and receipt mechanics.
 3. **Write within the existing boundaries.**
-   - Captain preferences and fleet-local operational facts belong in the destination selected by AGENTS.md after the required whole-file curation pass.
-     Create `data/learnings.md` only for a genuinely new local learning with no stronger owner.
-   - In a primary home, curate shared captain preferences only under the existing primary-authoritative shared-preference contract.
-     In a secondmate home, route a newly discovered shared preference to the main firstmate through marked status or a document pointer instead of editing the inherited file.
-   - Project-intrinsic knowledge never goes directly into a project's `AGENTS.md`.
-     Route it through a normal ship task so a crewmate records it with `bin/fm-ensure-agents-md.sh` and the project's delivery path.
-   - Knowledge general to every Firstmate user belongs in this repo's shared tracked material through the normal branch, no-mistakes, PR, and captain-merge path.
+   - Do not edit shared tracked material, a project `AGENTS.md`, or a skill in place; use the selected destination's normal delivery path.
    - For task-scoped notes, inspect the item with `tasks-axi show <id> --full`, classify the change as new, duplicate, superseding, or obsolete, then use a considered replacement body through `tasks-axi update <id> --body-file <path>`.
      Use `--archive-body` when recoverability matters.
      Never append.
    - File each undone next step as a queued backlog item with a genuine `blocked-by` dependency when applicable.
 4. **Use inspect-then-update.**
    For every retained fact, ask which current statement it supersedes, whether it can be a one-sentence rewrite, and whether a stale entry should be deleted, retired, or routed to an existing stronger owner.
-   Reusable work methods with clear trigger conditions may graduate to an appropriate skill through that skill's normal branch, no-mistakes, PR, and captain-merge path.
-   A finding routed to a project `AGENTS.md`, shared tracked material, or a skill remains in local memory until the destination change has landed.
+   A finding routed to an existing destination remains in local memory until the destination change has landed.
    Only after it lands may the source entry become a one-line pointer to its authoritative owner, followed by another budget report.
    Delete a stale entry only when no durable fact would be lost.
 
@@ -102,8 +94,6 @@ Act on each home by its reported `transport`:
   Report it as an unresolved exception and leave it to its next cascade.
   Relaunching that secondmate is a separate decision owned by `secondmate-provisioning`, never something `/stow` does on its own.
 - `unavailable` - that home's own accounting did not complete. Report the concrete exception and continue; a slow or unreachable home never blocks this home's `/stow`.
-
-A newly discovered shared captain preference still routes to the primary's `data/captain-shared.md` under the existing primary-authoritative contract, whichever home found it.
 
 Extend the completion receipt with one entry per secondmate alongside the primary's own, carrying that home's budget before and after, its per-file actions, its exceptions, and whether that home swept itself or was curated from here.
 Keep those entries in the same plain captain-facing language the rest of the receipt uses.
