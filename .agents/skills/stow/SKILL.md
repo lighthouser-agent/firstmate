@@ -48,7 +48,7 @@ Never describe the session as reset-safe while the memory total is over budget o
 1. **Sweep the session for uncaptured durable knowledge.**
    Look for operational learnings, captain preferences expressed in passing, project-intrinsic facts, standing decisions, and undone next steps.
 2. **Route each finding using AGENTS.md's knowledge-routing table.**
-   AGENTS.md section 6 is the sole owner of the complete destination and delivery-path mapping; this skill defines only the sweep, curation, handoff, and receipt mechanics.
+   AGENTS.md section 6 is the sole owner of the complete knowledge-destination mapping; this skill defines only the sweep, curation, handoff, and receipt mechanics.
 3. **Write within the existing boundaries.**
    - Do not edit shared tracked material, a project `AGENTS.md`, or a skill in place; use the selected destination's normal delivery path.
    - For task-scoped notes, inspect the item with `tasks-axi show <id> --full`, classify the change as new, duplicate, superseding, or obsolete, then use a considered replacement body through `tasks-axi update <id> --body-file <path>`.
