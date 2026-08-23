@@ -89,6 +89,10 @@ AGENTS.md section 3 remains the behavioral owner for session start, while tracke
 Before inspecting or changing session-open behavior, read `docs/sessionstart-nudge.md`, the single owner of tier assignment, per-surface transports, source routing, the runtime bound, and fail-open behavior.
 `docs/verification/supervision.md` "Native session-start delivery" owns active dated commands, payloads, and evidence.
 
+Trust prompts are remembered by worktree pool slot or path, not by what the fleet dashboard shows.
+A newly allocated slot can prompt again without any visible dashboard change, so after every spawn immediately peek each pane and clear its prompts before waiting on downstream work.
+Codex can present two trust or approval prompts during this intake check.
+
 ## Primary watcher supervision
 
 At session start, `bin/fm-session-start.sh` prints exactly one watcher supervision block for the detected primary harness.
@@ -165,6 +169,13 @@ Natural language is acceptable if uncertain.
 A send or key action reporting success is not proof that the intended action happened.
 OpenCode can accept and queue an Enter while leaving text visible, Grok can consume Enter in its slash popup without submitting, and Kimi can silently drop a message sent before readiness even though the send returns success.
 The shared symptom is a healthy-looking pane with no work in progress, so each adapter must verify the observable postcondition that is specific to its TUI.
+When `fm-send.sh` reports `delivery unconfirmed`, first read the target pane before resending because a busy pane can make that result a false negative while the message is already queued.
+For a keyed decision answer, put the key in the status marker as `needs-decision [key=<key>]: <summary>` or `blocked [key=<key>]: <summary>` so `--resolve-key` can match it.
+The form `needs-decision: [key=<key>]` is parsed as the default key and leaves the actual decision open.
+
+When a Pi spawn accepts `--model` or `--effort`, inspect the pane footer after launch because the values can be recorded in metadata without taking effect in the live session.
+A wedged agent is often caused by the model and effort combination rather than by the harness, so isolate those axes before replacing the adapter.
+A healthy worker waiting at a gate can look identical to a stuck worker in a pane peek; use `axi status` as the authority for validation state.
 
 ## claude (VERIFIED; busy-state hooks live-verified 2026-07-28 on Claude Code 2.1.220)
 
@@ -213,7 +224,8 @@ This is why the validation trigger (`$no-mistakes`) to a codex crew now lands on
 
 Directory trust dialog on first run per repo root: "Do you trust the contents of this directory?"
 Accept with Enter.
-The decision persists for the repo, so later worktrees of the same project skip it.
+Trust may persist for the repository path or a previously approved pool slot, but every newly allocated worktree pool slot can prompt again.
+After every spawn, immediately peek the pane and handle all trust or approval prompts before waiting on downstream work.
 
 Resume after exit with `codex resume <session-id>`.
 The session id is printed on quit.

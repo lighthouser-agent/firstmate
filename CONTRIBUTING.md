@@ -31,6 +31,32 @@ GitHub Actions and Dependabot are exempt so their automation keeps working, but 
 
 See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/start-here/quick-start/) for the full first-run walkthrough.
 
+## Operational review notes
+
+In observed runs, review and fix work consumed roughly 70 to 80 percent of elapsed time, with a single review-fix cycle sometimes exceeding 80 minutes.
+Splitting a large task into smaller independently reviewable tasks is the only reliably demonstrated way to shorten that cost.
+Do not lower the model without evidence that it preserves the required review quality, and do not add `agent_args_override` to Codex runs because that disables the neutralization switch required by the gate.
+With `session_reuse: true`, reviewers still perform a full cold re-review on every round while only the fixer reuses its session, so changing that YAML setting does not remove the cost.
+
+The `pr` step can overwrite the pull request description, so read the final description back before reporting completion when the body must contain exact wording.
+Green checks are not a merge decision: inspect the Codex bot review, confirm it reviewed the current PR head, and resolve its findings before merging.
+Do not trust a pipeline message that says all checks passed without independently running `gh-axi pr checks` for the PR.
+Cancelled workflow runs can be misclassified as successful, and a documentation-only PR may have no CI checks at all, which is neither green nor red.
+
+The firstmate repository cannot use `agent: pi` in its no-mistakes configuration because only Codex and Claude expose the required neutralization switch.
+The `agent` setting is global to the daemon, so changing it affects every active lane.
+An active run can reject `daemon restart`; first determine whether the run is genuinely stale before using any forced operation, because forcing a restart can terminate sibling lanes.
+A `socket: i/o timeout` under load is not by itself evidence that a run is stuck.
+
+Encode intentional deletions in tests and name the prohibition in `--instructions`, because the pipeline can otherwise restore removed behavior.
+The document step may alter contract text, remove evidence, or change dependency versions, so review the complete changed-file list before merging.
+A red deployment job does not prove that deployment failed: expand the job and distinguish a successful deploy step from a failed smoke step.
+
+If a run cannot mint a usable PR, custody is stranded, or the gate rejects a non-fast-forward ref, rerun the same commit from a new branch and new PR, then close the replaced PR with the replacement noted.
+For late changes, follow the cancellation and custody sequence in [`AGENTS.md`](AGENTS.md), and rebuild on the head pushed by the pipeline rather than on an old local baseline.
+The pull request files API is paginated: retrieve it completely with `gh-axi api --paginate .../pulls/<n>/files`, or inspect `refs/pull/<n>/head`, because the pipeline pushes its own `no-mistakes` remote and `origin/fm/<branch>` may not exist.
+`gh-axi pr diff` can omit part of a large change, so use the file list or pull-head ref when completeness matters.
+
 ## Repo conventions
 
 - This repo is a template for running a firstmate orchestrator agent.
