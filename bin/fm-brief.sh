@@ -30,7 +30,7 @@
 # For ship tasks, --mode is REQUIRED and shapes the definition of done. Firstmate
 # resolves it per task at intake (AGENTS.md section 7); data/projects.md holds the
 # captain's standing posture as context, and this script never reads it:
-#   no-mistakes  implement -> /no-mistakes pipeline -> PR -> configured merge authority
+#   no-mistakes  implement -> /no-mistakes pipeline with review-convergence adjudication -> PR -> configured merge authority
 #   direct-PR    implement -> push + open PR via gh-axi (no pipeline) -> configured merge authority
 #   local-only   implement on branch, stop and report "ready in branch" (no push/PR);
 #                the configured merge authority approves, firstmate merges to local main
@@ -392,6 +392,15 @@ You drive no-mistakes by responding to its gates, not by implementing fixes.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 When starting no-mistakes, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
+
+# Review convergence adjudication
+At each review gate, classify findings before responding:
+- Reproducible incorrect data or presentation, permission, consistency, or security defects within the accepted intent: select same-cause findings together in one partial \`respond\` selection and fix them as one batch.
+- A previously adjudicated topic whose relevant code has not changed: reject it with the prior ruling and do not fix it again.
+- Test-tooling preferences, documentation polish, internal refactors, second toolchains, or new product work: reject them for this PR and record them in the report's follow-up list.
+- Unclear requirements or business rules: append \`needs-decision\` with one precise question and do not guess.
+If the same topic appears in two consecutive review rounds, stop adding patches and append \`needs-decision\` for firstmate to decide whether to split follow-up work.
+A verified P0/P1 correctness or security defect may continue, but record the expanded scope in \`--intent\`.
 
 Two firstmate-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop.

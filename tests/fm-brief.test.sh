@@ -174,6 +174,7 @@ test_help_includes_entire_header() {
   local help
   help=$("$ROOT/bin/fm-brief.sh" --help)
   assert_contains "$help" "Refuses to overwrite an existing brief." "fm-brief.sh --help omitted its header terminator"
+  assert_contains "$help" "review-convergence adjudication" "fm-brief.sh --help omitted the no-mistakes review-convergence contract"
   pass "fm-brief.sh: --help renders the complete header"
 }
 
@@ -352,6 +353,44 @@ test_no_mistakes_dod_wording() {
   assert_grep "firstmate's authority check" "$brief" \
     "no-mistakes DOD lost the apostrophe prose that the structural fix makes parse-safe"
   pass "fm-brief.sh: no-mistakes DOD keeps its apostrophe prose, now parse-safe"
+}
+
+test_no_mistakes_review_convergence_protocol_is_mode_scoped() {
+  local home no_mistakes direct local_brief scout secondmate
+  home="$TMP_ROOT/review-convergence-home"
+  mkdir -p "$home/data"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" review-convergence some-proj --mode no-mistakes >/dev/null 2>&1
+  no_mistakes="$home/data/review-convergence/brief.md"
+  assert_grep "# Review convergence adjudication" "$no_mistakes" \
+    "no-mistakes brief did not include the review-convergence protocol"
+  assert_grep "Reproducible incorrect data or presentation, permission, consistency, or security defects within the accepted intent" "$no_mistakes" \
+    "no-mistakes brief did not scope fixable findings to reproducible in-intent defects"
+  assert_grep "select same-cause findings together in one partial \`respond\` selection" "$no_mistakes" \
+    "no-mistakes brief did not batch same-cause findings"
+  assert_grep "previously adjudicated topic whose relevant code has not changed" "$no_mistakes" \
+    "no-mistakes brief did not reject unchanged previously adjudicated topics"
+  assert_grep "Test-tooling preferences, documentation polish, internal refactors, second toolchains, or new product work" "$no_mistakes" \
+    "no-mistakes brief did not send non-current work to follow-up"
+  assert_grep "same topic appears in two consecutive review rounds" "$no_mistakes" \
+    "no-mistakes brief did not stop after two repeated review rounds"
+  assert_grep "verified P0/P1 correctness or security defect may continue" "$no_mistakes" \
+    "no-mistakes brief did not preserve the P0/P1 correctness and security exception"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" review-convergence-direct some-proj --mode direct-PR >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" review-convergence-local some-proj --mode local-only >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" review-convergence-scout some-proj --scout >/dev/null 2>&1
+  FM_HOME="$home" FM_SECONDMATE_CHARTER=x \
+    "$ROOT/bin/fm-brief.sh" review-convergence-secondmate --secondmate --no-projects >/dev/null 2>&1
+  direct="$home/data/review-convergence-direct/brief.md"
+  local_brief="$home/data/review-convergence-local/brief.md"
+  scout="$home/data/review-convergence-scout/brief.md"
+  secondmate="$home/data/review-convergence-secondmate/brief.md"
+  for brief in "$direct" "$local_brief" "$scout" "$secondmate"; do
+    assert_no_grep "# Review convergence adjudication" "$brief" \
+      "non-no-mistakes brief received the review-convergence protocol"
+  done
+  pass "fm-brief.sh: review-convergence protocol is complete and no-mistakes-only"
 }
 
 test_ship_project_memory_wording() {
@@ -719,6 +758,7 @@ test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
+test_no_mistakes_review_convergence_protocol_is_mode_scoped
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
 test_herdr_lab_contract_quotes_foreign_firstmate_path
