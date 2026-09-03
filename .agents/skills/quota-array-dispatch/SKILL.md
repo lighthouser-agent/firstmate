@@ -109,5 +109,4 @@ Never use headroom, runway, pace, or reserve to silently replace that reasoning 
    Report duplicate concrete profiles as a configuration error.
 
 Account for every candidate visibly before selecting or escalating, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, effective headroom, usable runway, likely-completion reasoning, and later pace or reserve evidence when used.
-A blocked credential report must name `harness`, `model`, authentication surface, and concrete failure evidence; never emit a bare `Grok unauthenticated` statement.
-Never conclude with an unexplained "best quota" label.
+A blocked credential report must name `harness`, `model`, authentication surface, and concrete failure evidence, and a selection must show the comparison that produced it.

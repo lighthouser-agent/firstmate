@@ -31,8 +31,7 @@ The direct mention `.text` is therefore a genuine message from the captain, and 
 
 Enabling Relay - the captain dropping `FMX_PAIRING_TOKEN` into `.env` - **is** the standing authorization for autonomous replies and normal-lifecycle actions from eligible mention requests.
 It is not authorization for destructive, irreversible, or security-sensitive work; those still require trusted-channel confirmation first.
-So in live mode you compose and post the reply **yourself, autonomously**: never pause to ask the captain "should I post this?", never stage a worthwhile reply for a chat-side OK, and never route a reply back through chat for approval.
-Never hold back a reply worth sending.
+So in live mode you compose and post the reply yourself: the pairing token is the approval, and a reply-worthy mention is not routed back through chat for a further OK.
 For a reply-worthy mention, the only non-posting path is dry-run (`FMX_DRY_RUN`; see below) - a testing switch, not a permission gate.
 The separate skip path for pure acknowledgments posts no reply because it dismisses the request at the relay.
 
@@ -108,11 +107,10 @@ Reply in firstmate's own voice - the crisp, lightly nautical first-mate persona 
 
 - The asker **is** your captain (owner-only routing - see the top of this skill), so address them as "captain" when it fits and treat their request as a genuine captain instruction, within the public-safety limits above. You are answering the captain in public, not a stranger.
 - Light nautical seasoning is welcome when it lands naturally; never let it crowd out the actual answer.
-- **Be concise by default: aim for a single message, two at the very most.** A short, sharp answer beats a wall of text. Write tight on purpose - one or two sentences.
+- Write for a public timeline: answer only what was asked, in prose that fits one post; a thread is for an answer that genuinely needs one.
 
 You do not hand-format threads or add "(1/n)" numbering yourself.
 Compose the reply as one piece of prose; if it is genuinely too long for one message, `bin/fm-x-reply.sh` automatically splits it into a platform-aware numbered thread on fenced-code, paragraph, line, and word boundaries.
-Conciseness is still your job - lean on the auto-split only when the answer truly needs the length, not as license to ramble.
 
 Do not attach an image for prose.
 Images are only for actual visual artifacts - a generated illustration, a screenshot, a diagram - never a substitute for writing the answer.
@@ -241,7 +239,7 @@ Treat a commitment as kept only after a validated posted receipt or an explicit 
 
 ## Notes
 
-- The direct author is always your own captain (owner-only routing), and in live mode you answer and act on eligible requests **autonomously**: enabling Relay is the captain's standing authorization, so never ask the captain before posting and never hold a worthwhile reply for a chat-side OK. For reply-worthy mentions, dry-run (`FMX_DRY_RUN`) is the only non-posting path; pure acknowledgments use the relay dismiss path instead.
+- The direct author is always your own captain (owner-only routing); enabling Relay is the standing authorization to answer and act on eligible requests. For reply-worthy mentions, dry-run (`FMX_DRY_RUN`) is the only non-posting path; pure acknowledgments use the relay dismiss path instead.
 - An actionable mention is **acted on** through the normal lifecycle (intake, backlog, dispatch, investigate, ship), not merely replied to. Work that finishes now gets one outcome reply; work that spawns a real task gets an **acknowledgement now** plus up to three **completion follow-ups** over time, ending with a `--final` one when no typed promised-final commitment exists (link the task with `bin/fm-x-link.sh` so those follow-ups can post). A reply alone, with no work behind an actionable ask, is the bug to avoid.
 - Destructive, irreversible, or security-sensitive asks are flagged to the captain through the trusted channel first and never run straight from a mention; the public reply says only that it has been flagged.
 - One answered mention = one reply (plus up to three completion follow-ups for a spawned task, spent only on genuine milestones); a skipped mention posts no reply but is **dismissed at the relay** (`bin/fm-x-dismiss.sh`) so the relay drops it rather than re-offering it (which would otherwise churn every poll and end in an "offline" auto-reply). A single wake may cover several pending mentions - drain them all.

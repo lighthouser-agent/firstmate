@@ -21,6 +21,13 @@
 # the one primary-authoritative shared captain-preference file,
 # data/captain-shared.md, into each secondmate home's data/ as a read-only copy.
 #
+# Delivery to an already-running secondmate: each changed generation gets one
+# private instruction file holding the exact post-write bytes, a CONFIG_REREAD:
+# pointer is delivered (fm-send locally, one marked nudge remotely), failed
+# delivery goes to a bounded retry queue and is quarantined after the budget,
+# and one per-home inheritance lock serializes concurrent pushes; a failure is
+# reported as a CONFIG_REREAD: diagnostic and never claims the agent re-read.
+#
 # Usage: . bin/fm-config-inherit-lib.sh   (no FM_* setup required)
 #
 # Why this is separate from the tracked-files fast-forward (fm-ff-lib.sh): config/
