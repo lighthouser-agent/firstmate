@@ -257,7 +257,7 @@ test_ship_mode_is_explicit_not_registry() {
   brief="$home/data/brief-explicit-a5/brief.md"
   grep -qx "Delivery contract: mode=no-mistakes" "$brief" \
     || fail "registered direct-PR posture overrode the explicit --mode"
-  assert_grep "Firstmate will then instruct you to run /no-mistakes" "$brief" \
+  assert_grep "you are explicitly authorized to run /no-mistakes immediately" "$brief" \
     "explicit no-mistakes brief did not render the pipeline definition of done"
 
   # An unregistered project is not a blocker either, because nothing is looked up.
@@ -305,7 +305,7 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   id="brief-local-authority-a4"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj --mode local-only >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
-  assert_grep "The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path." "$brief" \
+  assert_grep "The configured merge authority approves the ready branch, then firstmate merges it into the selected local base through the guarded fast-forward path." "$brief" \
     "local-only brief lost configured merge authority and guarded landing"
   assert_no_grep "The captain approves the ready branch" "$brief" \
     "local-only brief hard-coded captain-only authority"
@@ -747,6 +747,52 @@ test_scout_and_secondmate_scaffold() {
   pass "fm-brief: scout and secondmate code paths still scaffold well-formed briefs"
 }
 
+test_explicit_refs_and_allowed_paths() {
+  local home brief sandbox command_line
+  home="$TMP_ROOT/explicit-refs"
+  sandbox="$TMP_ROOT/ref-lab"
+  mkdir -p "$home" "$sandbox"
+  git -C "$sandbox" init -q
+  git -C "$sandbox" -c user.name=Test -c user.email=test@example.invalid commit --allow-empty -qm base
+  git -C "$sandbox" branch source
+  git -C "$sandbox" -c user.name=Test -c user.email=test@example.invalid commit --allow-empty -qm unrelated-head
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" selected example --mode no-mistakes \
+    --start-ref source --pr-base release --allow-path "$home/report's folder" --allow-path "$home/other" >/dev/null || fail "explicit options failed"
+  brief="$home/data/selected/brief.md"
+  assert_grep "start_ref='source'" "$brief" "missing selected start ref"
+  assert_grep "pr_base='release'" "$brief" "missing selected PR base"
+  assert_grep "$home/report's folder" "$brief" "missing authorized path"
+  assert_grep "$home/other" "$brief" "lost repeated allowed path"
+  assert_grep "$home/state/selected.status" "$brief" "status path not rendered"
+  assert_grep 'you are explicitly authorized to run /no-mistakes immediately' "$brief" "validation still waits for firstmate"
+  assert_no_grep 'done: {summary}' "$brief" "implementation-only done gate remains"
+  assert_grep 'same root cause blocks two attempts with no new evidence or progress' "$brief" "retry contract missing"
+  assert_grep 'Only if this task produced new durable' "$brief" "memory is still unconditional"
+  # shellcheck disable=SC2016 # Parse literal shell code emitted in the brief.
+  command_line=$(sed -n 's/.*create your branch: `\(.*\)`$/\1/p' "$brief")
+  [ -n "$command_line" ] || fail "branch command missing"
+  # shellcheck disable=SC2034 # The generated command consumes start_ref through eval.
+  (cd "$sandbox" && start_ref=source && eval "$command_line") >/dev/null 2>&1 || fail "generated branch command failed"
+  [ "$(git -C "$sandbox" rev-parse HEAD)" = "$(git -C "$sandbox" rev-parse source)" ] || fail "branch used current HEAD instead of start_ref"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" scout-ref example --scout --start-ref source --pr-base release >/dev/null || fail "scout options failed"
+  brief="$home/data/scout-ref/brief.md"
+  assert_grep 'git rev-parse --show-toplevel' "$brief" "scout isolation missing"
+  assert_grep 'start_ref=' "$brief" "scout start ref missing"
+  assert_no_grep 'Delivery contract: mode=no-mistakes' "$brief" "scout acquired ship contract"
+  assert_grep 'Delivery contract: kind=scout' "$brief" "scout delivery contract missing"
+  if FM_HOME="$home" "$ROOT/bin/fm-brief.sh" bad example --mode local-only --allow-path relative >/dev/null 2>&1; then fail "relative path accepted"; fi
+  if FM_HOME="$home" "$ROOT/bin/fm-brief.sh" bad example --mode local-only --start-ref 'bad ref' >/dev/null 2>&1; then fail "invalid ref accepted"; fi
+  if FM_HOME="$home" "$ROOT/bin/fm-brief.sh" bad --secondmate --no-projects --pr-base release >/dev/null 2>&1; then fail "charter accepted task refs"; fi
+  assert_absent "$home/data/bad/brief.md" "invalid input wrote a brief"
+  if [ -x /bin/bash ]; then
+    FM_HOME="$home" /bin/bash "$ROOT/bin/fm-brief.sh" stock-default example --mode no-mistakes >/dev/null || fail "stock Bash failed with no optional paths"
+    FM_HOME="$home" /bin/bash "$ROOT/bin/fm-brief.sh" stock-path example --scout --allow-path "$home/report's folder" >/dev/null || fail "stock Bash failed with allowed paths"
+    assert_grep "start_ref='main'" "$home/data/stock-default/brief.md" "default ref is not explicit"
+  fi
+  pass "fm-brief.sh: selected ref drives the branch; paths and validation are explicit"
+}
+
+test_explicit_refs_and_allowed_paths
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header

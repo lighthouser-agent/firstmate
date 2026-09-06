@@ -373,3 +373,19 @@ Observed output:
 ```
 
 The safe command-channel contract is covered without a notification by `tests/fm-daemon.test.sh`: the summary reaches both `$1` and stdin, every channel is process-group bounded, and a failed channel falls through.
+
+## Brief delivery and instruction routing
+
+On 2026-09-06, the brief contract checks ran with Bash 5.3.9 and macOS stock Bash 3.2.57; `bin/fm-lint.sh` passed with pinned ShellCheck 0.11.0.
+The generated ship branch command was executed in a disposable repository whose current HEAD differed from the selected start ref; the branch landed on the selected ref.
+The same public scaffold tests cover explicit PR bases, repeated authorized external paths, invalid inputs, stock-Bash empty arrays, scout isolation, mode-specific completion, and continuous implementation-to-no-mistakes authorization.
+The command below also verifies spawn profile, batch, and worktree-settle integration without changing live harnesses or backend lifecycle state.
+
+```sh
+bin/fm-test-run.sh tests/fm-brief.test.sh tests/fm-spawn-worktree-settle.test.sh tests/fm-spawn-batch.test.sh tests/fm-spawn-dispatch-profile.test.sh
+```
+
+Observed summary: `FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0` (timing omitted).
+The read-only startup renderer also completed with `bin/fm-supervision-instructions.sh --harness codex --read-only 1`; its output retained the lock-refused mutation prohibitions.
+All numbered AGENTS.md section headings remain stable for startup and supervision references.
+This is scaffold and routing evidence, not a new live-harness compatibility claim; the generated contract remains owned by `bin/fm-brief.sh` and runtime invocation by `harness-adapters`.

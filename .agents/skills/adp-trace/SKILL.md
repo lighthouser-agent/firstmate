@@ -1,10 +1,7 @@
 ---
 name: adp-trace
 description: >-
-  只读获取芯片超人 ADP 平台运行信息：按 webim traceinfo 链接 / sessionid / questionId 拉取
-  对话 trace 全量记录（GetMsgRecord，含 AgentThought、工具入出参、token 归因）；读取线上
-  Agent prompt、变量绑定、session token 成本。分析 ADP bad case、验证工具调用链、
-  或需要把 questionId 换成 providerConversationId 时使用。
+  按 ADP trace 链接或会话标识只读取数，调查调用链、线上 prompt 和 token 归因。
 ---
 
 # ADP 平台只读取数

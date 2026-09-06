@@ -1,6 +1,7 @@
 ---
 name: harness-adapters
-description: Agent-only reference for firstmate harness operations. Use before spawning or recovering a crewmate or secondmate, handling a trust dialog, sending a harness-specific skill invocation, interrupting or exiting an agent, resuming an exited agent, or verifying a new harness adapter. Contains verified facts for claude, codex, opencode, pi, pi-signed, grok, kimi, and muse.
+description: >-
+  Read before harness launch, recovery, control, skill invocation, or verification; use the applicable adapter branch.
 user-invocable: false
 metadata:
   internal: true
