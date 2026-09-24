@@ -195,6 +195,13 @@
 #   itself a linked worktree of the project repository still launches. A pane
 #   that never reaches an isolated worktree refuses at the end of that wait,
 #   naming the last path seen and why it was rejected.
+#   Treehouse shares one pool among every clone of the same origin (two homes
+#   each holding a copy of a project), and releases before
+#   kunchenguid/treehouse#145 hand out another clone's free slot. Such a slot is
+#   stepped out of before anything runs in it: spawn briefly leases the other
+#   clone's free slots under a task-scoped holder so the next `treehouse get`
+#   lands on (or creates) a slot of the spawning clone, then releases exactly
+#   those leases. A Treehouse without `return --if-lease-holder` refuses instead.
 #   That placement is proven only at launch. Every ship or scout pane therefore
 #   also receives `export FM_TASK_ID=<task-id>` before the launch command, on
 #   the same channel as GOTMPDIR, and bin/fm-test-run.sh refuses to execute the
@@ -1058,6 +1065,8 @@ SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
+SPAWN_TREEHOUSE_SKIP_HOLDER=
+SPAWN_TREEHOUSE_SKIP_LEASES=
 RELAUNCH_REPLACEMENT_PENDING=0
 RELAUNCH_REPLACEMENT_BUSY_GEN=
 RELAUNCH_REPLACEMENT_HARNESS=
@@ -1206,6 +1215,8 @@ spawn_abort_cleanup() {
       echo "warning: leaving task $ID's slot claim on $WT in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it" >&2
     fi
   fi
+  # Temporary leases on another clone's slots never outlive the spawn.
+  [ -z "$SPAWN_TREEHOUSE_SKIP_LEASES" ] || spawn_treehouse_release_skip_leases
   if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
     SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
     fm_lock_release "$SPAWN_TREEHOUSE_PROJECT_LOCK" || true
@@ -3619,43 +3630,10 @@ agy_spawn_fail() {  # <detail>
   rovo_endpoint_cleanup
 }
 
-if [ "$RELAUNCH" -eq 1 ]; then
-  # No worktree is acquired: the recorded one is reused as-is. What must be
-  # proven instead is that the adopted endpoint's shell is actually sitting in
-  # that worktree, so the replacement agent starts where the work is rather
-  # than wherever the pane happened to drift.
-  relaunch_wt_real=$(real_path_or_raw "$WT")
-  relaunch_seen=
-  for _ in $(seq 1 10); do
-    relaunch_seen=$(spawn_current_path "$WT_TARGET" || true)
-    [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ] || break
-    sleep 0.5
-  done
-  if [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ]; then
-    if [ "$BACKEND" != herdr ]; then
-      echo "error: task $ID's endpoint is in '${relaunch_seen:-unknown}', not its recorded worktree '$WT'; refusing to relaunch an agent outside the copy holding its work" >&2
-      exit 1
-    fi
-    relaunch_cd_path=${WT//\'/\'\\\'\'}
-    spawn_send_text_line "$WT_TARGET" "cd -- '$relaunch_cd_path'" || {
-      echo "error: task $ID's endpoint is in '${relaunch_seen:-unknown}' and could not be told to return to its recorded worktree '$WT'; refusing to relaunch an agent outside the copy holding its work" >&2
-      exit 1
-    }
-    for _ in $(seq 1 10); do
-      relaunch_seen=$(spawn_current_path "$WT_TARGET" || true)
-      [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ] || break
-      sleep 0.5
-    done
-    if [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ]; then
-      echo "error: task $ID's endpoint is in '${relaunch_seen:-unknown}' and did not return to its recorded worktree '$WT' when told to; refusing to relaunch an agent outside the copy holding its work" >&2
-      exit 1
-    fi
-  fi
-  [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
-elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  spawn_send_text_line "$WT_TARGET" 'treehouse get'
-
-  # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
+# Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
+# Sets WT to the settled worktree, or exits naming the last path the pane reported.
+spawn_await_treehouse_worktree() {
+  local candidate last_seen last_reason p p_real
   # Target the stable window id, not the name: if the name is ever lost (e.g. an
   # automatic-rename slips through), display-message -t <bad-name> falls back to the
   # active client's window, which would misread firstmate's OWN pane path as the
@@ -3711,6 +3689,156 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     echo "error: treehouse get did not enter an isolated worktree within 60s (last seen '${last_seen:-none}': $last_reason; spawning project '$PROJ_ABS'); inspect window $T" >&2
     exit 1
   fi
+}
+
+# True when <worktree> belongs to another clone of the same repository.
+# Treehouse keys a pool by repository name and origin URL, so separate clones of
+# one origin - two firstmate homes each holding their own copy of a project -
+# share a pool, and before kunchenguid/treehouse#145 `treehouse get` hands out
+# any free slot there, including one that is a linked worktree of the OTHER
+# clone. Such a slot still passes the isolation screen (it is not this
+# project's primary checkout), but a worker in it would branch and commit into
+# the other clone's repository, and Claude's trust pre-registration rightly
+# refuses it as not a worktree of this project. The test is the same physical
+# common-git-dir identity bin/fm-claude-trust.sh and fm_treehouse_pool_slot use.
+spawn_worktree_foreign_clone() { # <worktree>
+  local wt_common proj_common
+  wt_common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+    wt_common=$(cd "$wt_common" 2>/dev/null && pwd -P) || return 1
+  proj_common=$(git -C "$PROJ_ABS" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+    proj_common=$(cd "$proj_common" 2>/dev/null && pwd -P) || return 1
+  [ "$wt_common" != "$proj_common" ]
+}
+
+# Durable Treehouse leases this spawn holds on other clones' free slots, one
+# path per line, all under SPAWN_TREEHOUSE_SKIP_HOLDER. They exist only so the
+# pane's next `treehouse get` passes over those slots; they are released as
+# soon as the pane has its own slot, or by the abort trap.
+spawn_treehouse_release_skip_leases() {
+  local path
+  [ -n "$SPAWN_TREEHOUSE_SKIP_LEASES" ] || return 0
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    # --if-lease-holder makes the release conditional on this spawn's own
+    # lease, so it can never return a slot some other holder has since taken.
+    if ! ( cd -- "$PROJ_ABS" && treehouse return --if-lease-holder "$SPAWN_TREEHOUSE_SKIP_HOLDER" "$path" ) >/dev/null 2>&1; then
+      echo "warning: could not release the temporary Treehouse lease '$SPAWN_TREEHOUSE_SKIP_HOLDER' on $path; release it with: treehouse return --if-lease-holder '$SPAWN_TREEHOUSE_SKIP_HOLDER' '$path'" >&2
+    fi
+  done <<EOF
+$SPAWN_TREEHOUSE_SKIP_LEASES
+EOF
+  SPAWN_TREEHOUSE_SKIP_LEASES=
+}
+
+# Lease every free slot of another clone that Treehouse would hand out ahead of
+# one of this project's own, then give the own slot straight back. The next
+# interactive `treehouse get` from the project then lands on that own slot (or,
+# when the pool had none free, on one Treehouse creates from this clone). The
+# foreign slots are only reserved, never used: nothing runs in them, and their
+# release goes through Treehouse's ordinary conditional return.
+spawn_treehouse_skip_foreign_slots() {
+  local path n=0 max=${FM_TREEHOUSE_FOREIGN_SKIP_MAX:-32}
+  if ! treehouse return --help 2>/dev/null | grep -q -- '--if-lease-holder'; then
+    echo "error: the installed treehouse cannot release a lease conditionally (no 'treehouse return --if-lease-holder'), so it cannot skip another clone's slots; upgrade treehouse" >&2
+    return 1
+  fi
+  [ -n "$SPAWN_TREEHOUSE_SKIP_HOLDER" ] || SPAWN_TREEHOUSE_SKIP_HOLDER="fm-spawn-skip-foreign:$ID:${BASHPID:-$$}"
+  while [ "$n" -lt "$max" ]; do
+    n=$((n + 1))
+    if ! path=$(cd -- "$PROJ_ABS" && treehouse get --lease --lease-holder "$SPAWN_TREEHOUSE_SKIP_HOLDER" 2>/dev/null) ||
+      [ -z "$path" ] || [ ! -d "$path" ]; then
+      echo "error: treehouse could not provide a slot of this project's own clone (every free slot in the shared pool belongs to another clone and no new slot could be created); run 'treehouse status' in $PROJ_ABS" >&2
+      return 1
+    fi
+    if fm_treehouse_pool_slot "$PROJ_ABS" "$path"; then
+      ( cd -- "$PROJ_ABS" && treehouse return --if-lease-holder "$SPAWN_TREEHOUSE_SKIP_HOLDER" "$path" ) >/dev/null 2>&1 && return 0
+      SPAWN_TREEHOUSE_SKIP_LEASES="$SPAWN_TREEHOUSE_SKIP_LEASES$path"$'\n'
+      echo "error: could not hand this project's own Treehouse slot $path back to the pool after reserving it" >&2
+      return 1
+    fi
+    SPAWN_TREEHOUSE_SKIP_LEASES="$SPAWN_TREEHOUSE_SKIP_LEASES$path"$'\n'
+  done
+  echo "error: treehouse handed out $max slots of another clone without reaching one of this project's own" >&2
+  return 1
+}
+
+# Make sure the pane's `treehouse get` landed in a slot of this project's own
+# clone. When it landed in another clone's slot, nothing has run there yet, so
+# step out (its clean return to the pool is Treehouse's own), skip the other
+# clone's free slots, and acquire again. The retry bound covers the moment in
+# which the slot just left is still being returned and so escapes the skip.
+# The pane is never left holding another clone's slot, and the spawn launches
+# only in a worktree of this project's own clone.
+spawn_acquire_own_clone_slot() {
+  local foreign p attempt=0
+  while spawn_worktree_foreign_clone "$WT"; do
+    foreign=$WT
+    attempt=$((attempt + 1))
+    spawn_send_text_line "$WT_TARGET" 'exit'
+    if [ "$attempt" -gt 3 ]; then
+      echo "error: treehouse get kept handing out worktrees of another clone of this repository (last $foreign); refusing to launch there; inspect window $T" >&2
+      exit 1
+    fi
+    echo "warning: treehouse get handed out $foreign, a worktree of another clone of this repository; returning it and acquiring a slot of $PROJ_ABS's own clone instead" >&2
+    p=
+    for _ in $(seq 1 30); do
+      p=$(spawn_current_path "$WT_TARGET" || true)
+      [ -z "$p" ] || [ "$(real_path_or_raw "$p")" != "$PROJ_ABS_REAL" ] || break
+      sleep 1
+    done
+    if [ -z "$p" ] || [ "$(real_path_or_raw "$p")" != "$PROJ_ABS_REAL" ]; then
+      echo "error: the pane did not leave the other clone's slot $foreign (last seen '${p:-none}'); refusing to launch there; inspect window $T" >&2
+      exit 1
+    fi
+    if ! spawn_treehouse_skip_foreign_slots; then
+      echo "error: refusing to launch in another clone's worktree; inspect window $T" >&2
+      exit 1
+    fi
+    WT=
+    spawn_send_text_line "$WT_TARGET" 'treehouse get'
+    spawn_await_treehouse_worktree
+  done
+  spawn_treehouse_release_skip_leases
+}
+
+if [ "$RELAUNCH" -eq 1 ]; then
+  # No worktree is acquired: the recorded one is reused as-is. What must be
+  # proven instead is that the adopted endpoint's shell is actually sitting in
+  # that worktree, so the replacement agent starts where the work is rather
+  # than wherever the pane happened to drift.
+  relaunch_wt_real=$(real_path_or_raw "$WT")
+  relaunch_seen=
+  for _ in $(seq 1 10); do
+    relaunch_seen=$(spawn_current_path "$WT_TARGET" || true)
+    [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ] || break
+    sleep 0.5
+  done
+  if [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ]; then
+    if [ "$BACKEND" != herdr ]; then
+      echo "error: task $ID's endpoint is in '${relaunch_seen:-unknown}', not its recorded worktree '$WT'; refusing to relaunch an agent outside the copy holding its work" >&2
+      exit 1
+    fi
+    relaunch_cd_path=${WT//\'/\'\\\'\'}
+    spawn_send_text_line "$WT_TARGET" "cd -- '$relaunch_cd_path'" || {
+      echo "error: task $ID's endpoint is in '${relaunch_seen:-unknown}' and could not be told to return to its recorded worktree '$WT'; refusing to relaunch an agent outside the copy holding its work" >&2
+      exit 1
+    }
+    for _ in $(seq 1 10); do
+      relaunch_seen=$(spawn_current_path "$WT_TARGET" || true)
+      [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ] || break
+      sleep 0.5
+    done
+    if [ -z "$relaunch_seen" ] || [ "$(real_path_or_raw "$relaunch_seen")" != "$relaunch_wt_real" ]; then
+      echo "error: task $ID's endpoint is in '${relaunch_seen:-unknown}' and did not return to its recorded worktree '$WT' when told to; refusing to relaunch an agent outside the copy holding its work" >&2
+      exit 1
+    fi
+  fi
+  [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
+elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  spawn_send_text_line "$WT_TARGET" 'treehouse get'
+
+  spawn_await_treehouse_worktree
+  spawn_acquire_own_clone_slot
 
   validate_spawn_worktree "treehouse get" "$T"
 

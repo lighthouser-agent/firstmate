@@ -743,8 +743,169 @@ test_pool_slot_claim_follows_the_spawn_outcome() {
   pass "a Treehouse slot claim names the launched task, refuses when unclaimable, and is dropped by a locked abort"
 }
 
+# make_shared_pool_case <name> <id>: two clones of one origin sharing a
+# Treehouse-shaped pool whose only slots belong to the OTHER clone, the shape
+# two firstmate homes produce when each holds its own copy of a project.
+# The fakes model the pool the way Treehouse <= v2.3.0 serves it: a get takes
+# the first slot that is neither leased nor held by a pane, whichever clone owns
+# it, and creates a new slot from the requesting clone only when none is free.
+# Echoes "<case>|<home>|<project>|<other-clone>|<pool>|<fakebin>".
+make_shared_pool_case() {
+  local name=$1 id=$2 case_dir home project other origin pool fakebin
+  case_dir="$TMP_ROOT/$name"
+  home="$case_dir/home"
+  project="$home/projects/app"
+  other="$case_dir/other-home/projects/app"
+  origin="$case_dir/origin.git"
+  pool="$case_dir/pool"
+  fakebin=$(make_spawn_fakebin "$case_dir/fake" claude)
+  fm_test_fake_sleep_noop "$fakebin"
+  fm_test_spawn_home "$home" claude
+  fm_test_spawn_brief "$home" "$id"
+  mkdir -p "$case_dir/claude-config" "$pool" "$(dirname "$other")"
+
+  fm_git_init_commit "$case_dir/seed"
+  git clone --quiet --bare "$case_dir/seed" "$origin"
+  git clone --quiet "file://$origin" "$project"
+  git clone --quiet "file://$origin" "$other"
+  : > "$pool/treehouse-state.json"
+  : > "$pool/slots"
+  : > "$pool/leases"
+  : > "$pool/held"
+  git -C "$other" worktree add --quiet --detach "$pool/1/app" HEAD
+  git -C "$other" worktree add --quiet --detach "$pool/2/app" HEAD
+  printf '%s\n' "$pool/1/app" "$pool/2/app" > "$pool/slots"
+  printf '%s\n' "$project" > "$pool/pane-cwd"
+
+  # Shared pool selection: the first slot neither leased nor held, else a new
+  # slot created from the clone that asked.
+  cat > "$fakebin/fake-pool-pick" <<'SH'
+#!/usr/bin/env bash
+set -eu
+pool=$FM_FAKE_POOL requester=$1
+while IFS= read -r slot; do
+  [ -n "$slot" ] || continue
+  grep -Fq "$slot " "$pool/leases" && continue
+  grep -Fxq "$slot" "$pool/held" && continue
+  printf '%s\n' "$slot"; exit 0
+done < "$pool/slots"
+n=$(( $(grep -c . "$pool/slots") + 1 ))
+git -C "$requester" worktree add --quiet --detach "$pool/$n/app" HEAD
+printf '%s\n' "$pool/$n/app" >> "$pool/slots"
+printf '%s\n' "$pool/$n/app"
+SH
+  cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+set -eu
+pool=$FM_FAKE_POOL
+printf '%s\n' "$*" >> "$pool/treehouse.log"
+case "$*" in
+  "return --help")
+    [ -n "${FM_FAKE_TREEHOUSE_NO_CONDITIONAL_RETURN:-}" ] || printf '      --if-lease-holder string\n'
+    exit 0 ;;
+  "get --lease --lease-holder "*)
+    slot=$(fake-pool-pick "$(git rev-parse --show-toplevel)")
+    printf '%s %s\n' "$slot" "$4" >> "$pool/leases"
+    printf '%s\n' "$slot"; exit 0 ;;
+  "return --if-lease-holder "*)
+    grep -Fxq "$4 $3" "$pool/leases" || exit 1
+    grep -Fxv "$4 $3" "$pool/leases" > "$pool/leases.tmp" || true
+    mv "$pool/leases.tmp" "$pool/leases"; exit 0 ;;
+esac
+exit 0
+SH
+  # The pane: `treehouse get` enters the picked slot and holds it; `exit`
+  # leaves the slot for the project the pane started in.
+  mv "$fakebin/tmux" "$fakebin/tmux-base"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+pool=$FM_FAKE_POOL
+case "$*" in
+  *"#{pane_current_path}"*) cat "$pool/pane-cwd"; exit 0 ;;
+esac
+if [ "${1:-}" = send-keys ]; then
+  case "$*" in
+    *" treehouse get Enter")
+      slot=$(fake-pool-pick "$(cat "$pool/pane-cwd")")
+      printf '%s\n' "$slot" >> "$pool/held"
+      printf '%s\n' "$slot" > "$pool/pane-cwd" ;;
+    *" exit Enter")
+      grep -Fxv "$(cat "$pool/pane-cwd")" "$pool/held" > "$pool/held.tmp" || true
+      mv "$pool/held.tmp" "$pool/held"
+      printf '%s\n' "$FM_FAKE_POOL_PROJECT" > "$pool/pane-cwd" ;;
+  esac
+fi
+exec tmux-base "$@"
+SH
+  chmod +x "$fakebin/fake-pool-pick" "$fakebin/treehouse" "$fakebin/tmux"
+  printf '%s\n' "$case_dir|$home|$project|$other|$pool|$fakebin"
+}
+
+run_shared_pool_spawn() {  # <id>
+  FM_FAKE_POOL="$SP_POOL" FM_FAKE_POOL_PROJECT="$SP_PROJECT" \
+    FM_TEST_CLAUDE_CONFIG_DIR="$SP_CASE/claude-config" FM_FAKE_LAUNCH_LOG="$SP_CASE/launch.log" \
+    fm_test_run_spawn "$SP_HOME" "$SP_PROJECT" "$SP_FAKEBIN" "$1" "$SP_PROJECT" claude --scout
+}
+
+# A project whose shared pool holds only another clone's slots must still get
+# a worktree of its own clone, so a claude spawn's trust pre-registration holds
+# and the other clone is never used, refreshed, or left reserved.
+test_foreign_clone_pool_slots_are_skipped_for_own_clone() {
+  local rec id out status wt other_refs
+  id='pool-foreign-clone-r1'
+  rec=$(make_shared_pool_case foreign-clone "$id")
+  IFS='|' read -r SP_CASE SP_HOME SP_PROJECT SP_OTHER SP_POOL SP_FAKEBIN <<EOF
+$rec
+EOF
+  other_refs=$(git -C "$SP_OTHER" for-each-ref)
+
+  out=$(run_shared_pool_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "a spawn whose pool held only another clone's slots should launch"$'\n'"$out"
+  assert_contains "$out" "a worktree of another clone" \
+    "the spawn did not explain why it left the other clone's slot"
+  wt=$(sed -n 's/^worktree=//p' "$SP_HOME/state/$id.meta")
+  [ "$wt" = "$SP_POOL/3/app" ] || fail "the spawn recorded '$wt', not a new slot of its own clone"
+  [ "$(cd "$(git -C "$wt" rev-parse --git-common-dir)" && pwd -P)" = "$(cd "$SP_PROJECT/.git" && pwd -P)" ] \
+    || fail "the recorded worktree does not belong to the spawning project's clone"
+  assert_grep 'claude --dangerously-skip-permissions' "$SP_CASE/launch.log" \
+    "the claude worker was not launched"
+  [ ! -s "$SP_POOL/leases" ] || fail "the spawn left temporary leases behind: $(cat "$SP_POOL/leases")"
+  [ "$(cat "$SP_POOL/held")" = "$wt" ] \
+    || fail "the pane holds more than its own slot: $(tr '\n' ' ' < "$SP_POOL/held")"
+  [ "$(git -C "$SP_OTHER" for-each-ref)" = "$other_refs" ] \
+    || fail "the spawn changed the other clone's refs"
+  [ ! -e "$SP_OTHER/.git/FETCH_HEAD" ] || fail "the spawn fetched into the other clone"
+  pass "a pool holding only another clone's slots yields a worktree of the spawning clone"
+}
+
+# Without a conditional lease release the skip cannot be undone safely, so the
+# spawn refuses rather than launching in the other clone, and steps the pane
+# out of that clone's slot instead of leaving it held.
+test_foreign_clone_slot_refuses_without_conditional_return() {
+  local rec id out status
+  id='pool-foreign-clone-old-r1'
+  rec=$(make_shared_pool_case foreign-clone-old "$id")
+  IFS='|' read -r SP_CASE SP_HOME SP_PROJECT SP_OTHER SP_POOL SP_FAKEBIN <<EOF
+$rec
+EOF
+  out=$(FM_FAKE_TREEHOUSE_NO_CONDITIONAL_RETURN=1 run_shared_pool_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "a spawn that could not skip another clone's slot launched anyway"$'\n'"$out"
+  assert_contains "$out" "upgrade treehouse" "the refusal did not name the remedy"
+  [ ! -e "$SP_HOME/state/$id.meta" ] || fail "the refused spawn published task metadata"
+  [ ! -s "$SP_POOL/held" ] || fail "the refused spawn left the pane holding $(cat "$SP_POOL/held")"
+  [ ! -s "$SP_POOL/leases" ] || fail "the refused spawn left leases behind"
+  [ ! -e "$SP_CASE/launch.log" ] || ! grep -q 'claude --dangerously' "$SP_CASE/launch.log" \
+    || fail "the refused spawn launched a worker"
+  pass "a spawn that cannot skip another clone's slot refuses and releases it"
+}
+
 test_remote_seeded_home_spawns_from_treehouse_pool
 test_pool_slot_claim_follows_the_spawn_outcome
+test_foreign_clone_pool_slots_are_skipped_for_own_clone
+test_foreign_clone_slot_refuses_without_conditional_return
 test_linked_spawning_home_rejects_primary_before_refresh
 test_stale_pool_base_refreshes_before_branching
 test_non_main_default_branch_refreshes_before_branching
