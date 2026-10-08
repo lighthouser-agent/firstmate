@@ -65,13 +65,15 @@ Do not edit `config/features` by hand.
 mkdir -p config
 printf 'pi\n' > config/crew-harness
 cp docs/examples/team/crew-dispatch.json config/crew-dispatch.json
+cp docs/examples/team/brief-include.md config/brief-include.md
 ```
 
-Pass: `jq . config/crew-dispatch.json` prints the profiles without an error.
+Pass: `jq . config/crew-dispatch.json` prints the profiles without an error, and `config/brief-include.md` exists.
 
 This template sends every task to Pi on the teammate's Codex quota and picks the model tier by task class: errand checks, moderate engineering, difficult investigation, routine implementation.
 A teammate who also uses Claude Code copies `docs/examples/team/crew-dispatch.claude.json` instead, which adds the Claude candidates; they log in with `claude` themselves first.
 Never invent a model name; the templates are the team's current tiers.
+`config/brief-include.md` is appended to every ship and scout brief: workers do not add unit or integration tests on their own, keep existing tests passing, and prove the done bar with real before/after reproduction and end-to-end runs instead, which saves CI minutes. Delete the file to turn it off.
 
 ## 5. Install the Firstmate toolchain
 
