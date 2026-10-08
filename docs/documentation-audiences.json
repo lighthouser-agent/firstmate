@@ -602,6 +602,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/examples/team/brief-include.md",
+      "audience": "operator-example"
+    },
+    {
       "path": "docs/examples/team/crew-dispatch.claude.json",
       "audience": "operator-example"
     },
