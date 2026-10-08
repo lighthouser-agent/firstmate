@@ -335,6 +335,16 @@ test_propagate_lib() {
   [ "$(cat "$dest/backend")" = tmux ] || fail "primary backend did not overwrite a divergent destination"
   [ -f "$dest/trace-context" ] || fail "trace-context not propagated by the default inheritable set"
 
+  : > "$src/wait-no-turns"
+  printf '%s\n' 'Do not add tests unless requested.' > "$src/brief-include.md"
+  propagate_inheritable_config "$src" "$dest" || fail "worker preferences push failed"
+  cmp -s "$src/wait-no-turns" "$dest/wait-no-turns" || fail "wait-no-turns not propagated"
+  cmp -s "$src/brief-include.md" "$dest/brief-include.md" || fail "brief-include.md not propagated"
+  rm -f "$src/wait-no-turns" "$src/brief-include.md"
+  propagate_inheritable_config "$src" "$dest" || fail "worker preferences absence push failed"
+  assert_absent "$dest/wait-no-turns" "wait-no-turns not removed on primary absence"
+  assert_absent "$dest/brief-include.md" "brief-include.md not removed on primary absence"
+
   # 2. idempotent: an unchanged re-run does not churn the mtime
   m1=$(date -r "$dest/crew-harness" +%s 2>/dev/null || stat -c %Y "$dest/crew-harness")
   sleep 1
