@@ -48,6 +48,8 @@ make_home() {  # <home> [task-id...]
   shift
   mkdir -p "$home/state" "$home/config" "$home/data" "$home/projects"
   touch "$home/state/.last-watcher-beat"
+  # These cases isolate project capacity from the additional machine guard.
+  printf 'enabled 0\n' > "$home/config/machine-limit"
   printf '%s\n' codex > "$home/config/crew-harness"
   if [ "$HAVE_TASKS_AXI" = 1 ]; then
     printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' \
@@ -550,7 +552,7 @@ test_batch_reports_a_deferred_pair() {
   write_live "$home" live-a "$case_dir/project"
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair was deferred did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project is at capacity, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - project or machine admission deferred it, so it stays queued" \
     "the batch did not report the deferral"
   assert_not_contains "$out" "batch: FAILED" "the batch reported a deferral as a failure"
   pass "a batch reports a capacity deferral as deferred, not failed"
@@ -624,6 +626,69 @@ SH
   pass "an Orca spawn takes the shared project lock whenever a same-origin clone is capped and defers before creating anything"
 }
 
+# Approved machine admission case: different projects share one limit; cleanup
+# frees it and the previously deferred item can be dispatched without refiling.
+test_machine_admission_and_release() {
+  local case_dir home mate out rc=0
+  case_dir=$(make_case machine-admission task-c)
+  home="$case_dir/home"
+  printf 'workers 1\nfree_mb 0\nswap_mb 0\nload 0\n' > "$home/config/machine-limit"
+  mate="$case_dir/mate"
+  make_home "$mate"
+  printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$home" > "$mate/.fm-secondmate-parent"
+  printf -- '- mate - local worker home (home: %s; scope: project work; projects: project; added 2026-09-01)\n' "$mate" > "$home/data/secondmates.md"
+  write_live "$mate" live-a "$case_dir/other-project"
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code 75 "$rc" "another project's worker did not consume machine capacity: $out"
+  assert_contains "$out" 'machine limit of 1' 'machine deferral omitted reason'
+  assert_absent "$home/state/task-c.meta" 'machine deferral published a task'
+  rc=0
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$mate" FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+    FM_FAKE_CALL_LOG="$case_dir/calls.log" PATH="$case_dir/fakebin:$PATH" \
+    "$TEARDOWN" live-a 2>&1) || rc=$?
+  expect_code 0 "$rc" "machine capacity cleanup failed: $out"
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "machine capacity did not free after cleanup: $out"
+  pass 'machine limit defers across projects and admits after cleanup'
+}
+
+test_machine_threshold_alarm() (
+  local case_dir home out
+  case_dir=$(make_case machine-alarm)
+  home="$case_dir/home"
+  export FM_HOME="$home" STATE="$home/state" FM_STATE_OVERRIDE="$home/state"
+  export FM_WAKE_QUEUE="$home/state/.wake-queue" FM_WAKE_QUEUE_LOCK="$home/state/.wake-queue.lock"
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-backend.sh"
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-wake-lib.sh"
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-project-capacity-lib.sh"
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-machine-load-lib.sh"
+  printf 'free_mb 999999\nsamples 2\n' > "$home/config/machine-limit"
+  if fm_machine_heartbeat "$home" "$home/config" "$home/state" > "$case_dir/first"; then
+    fail 'one bad sample raised a sustained-overload alarm'
+  fi
+  out=$(fm_machine_heartbeat "$home" "$home/config" "$home/state") || fail 'injected threshold did not raise alarm'
+  assert_contains "$out" 'Machine overload:' 'alarm missing reason'
+  assert_contains "$out" 'Machine top RSS' 'alarm missing process evidence'
+  export STATE="$home/state"
+  fm_machine_notify "$home" "$out" || fail 'machine alarm was not enqueued'
+  if fm_machine_notify "$home" "$out"; then fail 'machine alarm was enqueued twice'; fi
+  assert_grep 'machine-load' "$home/state/.wake-queue" 'threshold alarm did not emit a check wake'
+  if fm_machine_heartbeat "$home" "$home/config" "$home/state" > "$case_dir/repeated"; then
+    fail 'unchanged overload repeated alarm'
+  fi
+  printf 'free_mb 0\nswap_mb 0\nload 0\n' > "$home/config/machine-limit"
+  fm_machine_heartbeat "$home" "$home/config" "$home/state" >/dev/null || true
+  assert_absent "$home/state/.machine-alarm" 'healthy sample did not reset alarm'
+  pass 'injected threshold triggers once after sustained samples and resets when healthy'
+)
+
+test_machine_admission_and_release
+test_machine_threshold_alarm || exit 1
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_exhausted_capacity_defers_without_leaving_anything_behind

@@ -689,6 +689,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-project-capacity-lib.sh
 . "$SCRIPT_DIR/fm-project-capacity-lib.sh"
+# shellcheck source=bin/fm-machine-load-lib.sh
+. "$SCRIPT_DIR/fm-machine-load-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
@@ -1284,6 +1286,8 @@ SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
+SPAWN_MACHINE_LOCK=
+SPAWN_MACHINE_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
 RELAUNCH_REPLACEMENT_PENDING=0
 RELAUNCH_REPLACEMENT_BUSY_GEN=
@@ -1449,6 +1453,10 @@ spawn_abort_cleanup() {
     SPAWN_CONTROL_LOCK_HELD=0
     fm_lock_release "$SPAWN_CONTROL_LOCK" || true
   fi
+  if [ "$SPAWN_MACHINE_LOCK_HELD" = 1 ]; then
+    SPAWN_MACHINE_LOCK_HELD=0
+    fm_lock_release "$SPAWN_MACHINE_LOCK" || true
+  fi
   [ -z "$SPAWN_META_TMP" ] || rm -f "$SPAWN_META_TMP" 2>/dev/null || true
   if [ "$CONFIG_INHERIT_LOCK_HELD" = 1 ]; then
     CONFIG_INHERIT_LOCK_HELD=0
@@ -1589,7 +1597,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     pair_rc=0
     FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair_args[@]}" || pair_rc=$?
     if [ "$pair_rc" -eq "$FM_PROJECT_CAPACITY_DEFER_EXIT" ]; then
-      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project is at capacity, so it stays queued" >&2
+      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - project or machine admission deferred it, so it stays queued" >&2
       [ "$rc" -ne 0 ] || rc=$FM_PROJECT_CAPACITY_DEFER_EXIT
     elif [ "$pair_rc" -ne 0 ]; then
       echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2
@@ -3148,6 +3156,30 @@ fi
 # worker that already holds a place, and a secondmate is not a worker.
 SPAWN_PROJECT_CAPACITY=
 SPAWN_PROJECT_CAPACITY_ANY=
+if [ "$KIND" != secondmate ]; then
+  SPAWN_MACHINE_CONFIG=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") || exit 1
+  fm_machine_limit_read "$SPAWN_MACHINE_CONFIG" || {
+    echo "error: machine limit declaration refused: ${FM_MACHINE_ERROR:-invalid enabled or samples value}" >&2
+    exit 1
+  }
+  if [ "$FM_MACHINE_ENABLED" = 1 ]; then
+    SPAWN_MACHINE_LOCK="$(fm_firstmate_root_home "$FM_HOME")/state/.machine-admission.lock"
+    fm_lock_try_acquire "$SPAWN_MACHINE_LOCK" || {
+      echo "deferred: another machine admission is in progress; task $ID stays queued" >&2
+      exit 75
+    }
+    SPAWN_MACHINE_LOCK_HELD=1
+    machine_rc=0
+    fm_machine_admit "$STATE" "$ID" || machine_rc=$?
+    if [ "$machine_rc" = 75 ]; then
+      echo "deferred: $FM_MACHINE_REASON; task $ID was not launched and stays queued for re-dispatch after cleanup or a healthy heartbeat" >&2
+      exit 75
+    elif [ "$machine_rc" != 0 ]; then
+      echo "error: machine admission could not be established: ${FM_MACHINE_ERROR:-unreadable local task records}" >&2
+      exit 1
+    fi
+  fi
+fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   SPAWN_CAPACITY_CONFIG=$(fm_project_capacity_config_dir "$FM_HOME" "$CONFIG") || {
     echo "error: could not resolve the root Firstmate home that declares project capacity for $PROJ_ABS" >&2
@@ -5275,6 +5307,10 @@ if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
   # publication.
   SPAWN_TASK_SET_LOCK_HELD=0
   fm_lock_release "$SPAWN_TASK_SET_LOCK"
+fi
+if [ "$SPAWN_MACHINE_LOCK_HELD" = 1 ]; then
+  SPAWN_MACHINE_LOCK_HELD=0
+  fm_lock_release "$SPAWN_MACHINE_LOCK"
 fi
 "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
