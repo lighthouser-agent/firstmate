@@ -400,8 +400,26 @@ if [ "$KIND" != secondmate ] && { [ -e "$BRIEF_INCLUDE_FILE" ] || [ -L "$BRIEF_I
   [ -n "$(printf '%s' "$BRIEF_INCLUDE_BODY" | tr -d '[:space:]')" ] || BRIEF_INCLUDE_BODY=
 fi
 
-# Append the include as the last section of a ship or scout scaffold.
+# config/brief-shared-machine is 'on' (default) or 'off'. Applies to workers,
+# not persistent secondmates; home additions may impose stricter limits.
+BRIEF_SHARED_MACHINE=on
+if [ "$KIND" != secondmate ] && { [ -e "$CONFIG/brief-shared-machine" ] || [ -L "$CONFIG/brief-shared-machine" ]; }; then
+  BRIEF_SHARED_MACHINE=$(cat "$CONFIG/brief-shared-machine") || exit 1
+  case "$BRIEF_SHARED_MACHINE" in on|off) ;; *) echo 'error: brief-shared-machine must be on or off' >&2; exit 1 ;; esac
+fi
+
+# Append tracked defaults, then the optional home include.
 append_brief_include() {
+  if [ "$BRIEF_SHARED_MACHINE" = on ]; then
+    cat >> "$BRIEF" <<'EOF'
+
+# Shared machine
+Run only change-related tests locally, serially, with at most two test processes.
+Do not run full local suites or container stacks; full checks belong on PR CI.
+Keep at most one automation browser open, and run `chrome-devtools-axi stop` when finished.
+Close WeChat Developer Tools after mini-program verification.
+EOF
+  fi
   [ -n "$BRIEF_INCLUDE_BODY" ] || return 0
   printf '\n%s\n%s\n%s\n' \
     '# Home brief additions' \

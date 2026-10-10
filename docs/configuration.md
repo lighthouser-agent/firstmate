@@ -1007,6 +1007,7 @@ The address selects the existing shared server; it does not authorize starting o
 ## Home brief include (config/brief-include.md)
 
 The optional local, gitignored `config/brief-include.md` adds standing worker instructions to every ship and scout brief.
+Tracked shared-machine instructions are included by default; `config/brief-shared-machine=off` disables them (`bin/fm-brief.sh` owns the values and content).
 This keeps private brief content out of tracked files.
 When the file exists, `bin/fm-brief.sh` appends its text verbatim as the scaffold's last section, `# Home brief additions`, which defers to every other section of the brief, including the ship contract a later scout promotion appends below it.
 
@@ -1099,10 +1100,19 @@ When stripping is enabled, the hooks directory is read-only, so a hook manager r
 The flag is a home-wide attribution choice, so it is inherited into secondmate homes under the [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md) inherited-local-material contract and a secondmate's own workers keep AI trailers too.
 Per-machine Cursor `cli-config.json` attribution-off is not this contract: it does not travel with Firstmate, defaults back to on when unset, and only feeds the CLI's request to the server, so it suppresses the trailer rather than preventing it.
 
+## Machine admission (config/machine-limit)
+
+Machine admission bounds local worker dispatch in addition to project capacity.
+The root home's optional `config/machine-limit` customizes the tracked defaults; [`bin/fm-machine-load-lib.sh`](../bin/fm-machine-load-lib.sh) owns its keys, defaults, sampling, and conservative occupancy policy.
+All registered local homes share admission; remote homes are excluded, and other homes' endpoints are never probed or claimed.
+A refusal due to capacity or pressure exits 75 before launching or moving the queued item; cleanup and heartbeat queue re-evaluation can retry it.
+Heartbeat records a cheap memory/load/Docker sample and raises one overload notification across local homes per sustained episode, with top-memory attribution when available.
+It never stops Docker Desktop or unrelated processes.
+
 ## Project capacity (config/project-capacity)
 
 The optional local, gitignored `config/project-capacity` tells Firstmate how many workers a project can run at once on this machine, for a project whose machine-local resource - a heavy test suite, a local editor stack, a device - only serves a few workers at a time.
-Without it, dispatch stays uncapped as `AGENTS.md` section 7 describes, and a surplus worker is launched only to spend full-context turns waiting for the resource.
+Without it, the machine admission limit still applies, but no additional per-project limit is declared.
 The file lives in the machine's root Firstmate home, so every local secondmate home reads the same limit, and it holds one line per project:
 
 ```text

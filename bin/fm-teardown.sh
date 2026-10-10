@@ -351,6 +351,7 @@ for _teardown_source in \
   fm-cursor-lib.sh \
   fm-nm-run-lib.sh \
   fm-wake-lib.sh \
+  fm-task-resources-lib.sh \
   fm-path-lib.sh \
   fm-lease-lib.sh
 do
@@ -408,6 +409,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 }
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-task-resources-lib.sh
+. "$SCRIPT_DIR/fm-task-resources-lib.sh"
 # Supervision lease guard: post-landing cleanup is overlap territory between
 # the two Pi supervision actors; refuse while the OTHER actor holds this
 # task's live lease (contract: bin/fm-lease-lib.sh; no-op in homes without
@@ -2147,8 +2150,15 @@ task_pids_under_roots() {  # <dir>...
       TASK_PIDS_FAILED_DIR=$dir
       return 1
     fi
+    # A browser may change cwd while retaining its task-local profile.
+    local profile_pids
+    profile_pids=$(fm_task_profile_pids "$dir") || {
+      TASK_PIDS_FAILED_DIR=$dir
+      return 1
+    }
     pids="$pids
-$dir_pids"
+$dir_pids
+$profile_pids"
   done
   TASK_PIDS=$(printf '%s\n' "$pids" | grep -E '^[0-9]+$' | sort -un || true)
 }
@@ -2197,7 +2207,8 @@ reap_task_backend_process_group() {  # <label>
   fi
 }
 
-# Reap every process rooted (by cwd) under this task's own worktree or tasktmp
+# Reap every process rooted by cwd or a task-local browser profile under the
+# task's own worktree or tasktmp (fm-task-resources-lib.sh owns profile discovery)
 # - both unique per task and never shared - before either is removed. TERM
 # first, then KILL after a short grace period for anything still alive; a
 # process that exits on its own between the two passes is simply absent from
@@ -2254,6 +2265,7 @@ EOF
       if task_pid_list_contains "$current_pids" "$pid" \
          && task_process_identity_matches "$pid" "$identity"; then
         kill -TERM "$pid" 2>/dev/null || true
+        printf 'sent TERM to task process %s (%s)\n' "$pid" "$identity" >> "$STATE/$ID.cleanup.log"
       fi
     done
     sleep 1
@@ -2286,6 +2298,7 @@ EOF
         if task_pid_list_contains "$current_pids" "$pid" \
            && task_process_identity_matches "$pid" "$identity"; then
           kill -KILL "$pid" 2>/dev/null || true
+          printf 'sent KILL to task process %s (%s)\n' "$pid" "$identity" >> "$STATE/$ID.cleanup.log"
         fi
       done
     fi
@@ -3552,6 +3565,7 @@ fi
 # not by task-worktree cleanup.
 if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
   conclude_task_no_mistakes_run "$WT"
+  fm_task_stop_containers "$WT" "$STATE/$ID.cleanup.log"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
 elif [ "$KIND" != secondmate ]; then
   reap_task_worktree_processes tasktmp "$TASK_TMP"

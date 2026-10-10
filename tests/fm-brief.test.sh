@@ -1169,6 +1169,12 @@ test_home_brief_include_is_appended_last() {
 
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" include-absent some-proj --scout >/dev/null || fail "scout scaffold failed without an include"
   assert_no_grep '# Home brief additions' "$home/data/include-absent/brief.md" "an absent include still added a section"
+  assert_grep '# Shared machine' "$home/data/include-absent/brief.md" 'tracked shared-machine default missing'
+  assert_grep 'at most two test processes' "$home/data/include-absent/brief.md" 'shared-machine test limit missing'
+  printf 'off\n' > "$config/brief-shared-machine"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" shared-off some-proj --scout >/dev/null || fail 'disabled shared-machine scaffold failed'
+  assert_no_grep '# Shared machine' "$home/data/shared-off/brief.md" 'shared-machine opt-out ignored'
+  rm "$config/brief-shared-machine"
   printf ' \n\n' > "$config/brief-include.md"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" include-blank some-proj --scout >/dev/null || fail "scout scaffold failed with a blank include"
   assert_no_grep '# Home brief additions' "$home/data/include-blank/brief.md" "a blank include still added a section"

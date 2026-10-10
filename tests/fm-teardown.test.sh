@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tests for bin/fm-teardown.sh's landed-work safety and stale-lock recovery.
+# FM_TEARDOWN_RESOURCES_ONLY=1 runs just the task browser/container acceptance.
 #
 # The check refuses to tear down a worktree whose work has not LANDED, because
 # treehouse return hard-resets the worktree. "Landed" means reachable from a remote
@@ -94,6 +95,16 @@ SH
 # tmux kill-window etc.: succeed silently.
 exit 0
 SH
+  # Never inspect the host's real Docker daemon in hermetic cleanup cases.
+  cat > "$fakebin/docker" <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  'context inspect') printf 'unix:///nonexistent/fm-test-docker.sock\n' ;;
+  'ps -q') : ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/docker"
   # Default gh-axi mock: no PR is associated with the branch, and viewing any PR
   # number fails. This keeps the landed-work check hermetic (never reaching the real
   # gh-axi) and represents the common "no GitHub PR" baseline. Tests that need a
@@ -3964,6 +3975,107 @@ test_leaked_worktree_process_is_reaped() {
   pass "a leaked descendant process rooted under the task's worktree is reaped by teardown, not left surviving"
 }
 
+# Acceptance: profile-owned processes are reaped even after changing cwd;
+# sibling-root processes survive. FM_LIVE_TASK_CHROME=1 proves this with the
+# installed browser tool in a unique named session (no user's default browser).
+test_task_browser_profile_is_reaped() {
+  local case_dir rc=0 owned other profile_pids session survivors=
+  case_dir=$(make_case browser-profile-reap)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  printf '.chrome-profile/\n' > "$case_dir/excludes"
+  git -C "$case_dir/wt" config core.excludesfile "$case_dir/excludes"
+  # Similar prefix deliberately must not count as the task's root.
+  ( cd "$case_dir" && exec python3 -c 'import time; time.sleep(300)' "--user-data-dir=$case_dir/wt-other/profile" ) &
+  other=$!
+  if [ "${FM_LIVE_TASK_CHROME:-0}" = 1 ]; then
+    session="fm-cleanup-proof-$$"
+    ( cd "$case_dir/wt" && CHROME_DEVTOOLS_AXI_SESSION="$session" \
+      CHROME_DEVTOOLS_AXI_AUTO_CONNECT=0 CHROME_DEVTOOLS_AXI_BROWSER_URL='' \
+      CHROME_DEVTOOLS_AXI_USER_DATA_DIR="$case_dir/wt/.chrome-profile" \
+      chrome-devtools-axi start ) > "$case_dir/browser.log" 2>&1 || {
+        CHROME_DEVTOOLS_AXI_SESSION="$session" chrome-devtools-axi stop >> "$case_dir/browser.log" 2>&1 || true
+        kill "$other" 2>/dev/null || true
+        fail "isolated Chrome did not start: $(cat "$case_dir/browser.log")"
+      }
+  else
+    ( cd "$case_dir" && exec python3 -c 'import time; time.sleep(300)' "--user-data-dir=$case_dir/wt/.chrome-profile" ) &
+    owned=$!
+  fi
+  sleep 0.3
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-task-resources-lib.sh"
+  profile_pids=$(fm_task_profile_pids "$case_dir/wt")
+  [ -n "$profile_pids" ] || { kill "$other" 2>/dev/null || true; fail 'task browser profile was not discovered'; }
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  while IFS= read -r owned; do
+    if kill -0 "$owned" 2>/dev/null; then survivors="$survivors $owned"; fi
+  done <<< "$profile_pids"
+  # Observe teardown's result BEFORE this final best-effort tool cleanup.
+  # Cleanup only our explicitly named session; this does not touch the default.
+  if [ "${FM_LIVE_TASK_CHROME:-0}" = 1 ]; then
+    CHROME_DEVTOOLS_AXI_SESSION="$session" chrome-devtools-axi stop >> "$case_dir/browser.log" 2>&1 || true
+  fi
+  expect_code 0 "$rc" "browser teardown refused: $(cat "$case_dir/stderr")"
+  if [ -n "$survivors" ]; then
+    kill "$other" 2>/dev/null || true
+    fail "task profile processes survived teardown:$survivors"
+  fi
+  kill -0 "$other" 2>/dev/null || fail 'another task profile was stopped'
+  kill "$other" 2>/dev/null || true
+  wait "$other" 2>/dev/null || true
+  assert_grep 'sent TERM to task process' "$case_dir/state/task-x1.cleanup.log" 'cleanup did not retain its process record'
+  pass 'teardown stops task profile processes, records them, and leaves sibling profiles untouched'
+}
+
+# No real Docker stack is started: an isolated Unix endpoint and executable
+# fixture exercise ownership/recheck/stop through the production public helper.
+test_task_containers_only_are_stopped() (
+  local case_dir
+  case_dir=$(make_case container-cleanup)
+  python3 - "$case_dir/docker.sock" <<'PY'
+import os, socket, sys
+os.chdir(os.path.dirname(sys.argv[1]))
+s = socket.socket(socket.AF_UNIX)
+s.bind(os.path.basename(sys.argv[1]))
+s.close()
+PY
+  export DOCKER_HOST="unix://$case_dir/docker.sock"
+  export FM_CONTAINER_LOG="$case_dir/docker-calls" FM_CONTAINER_JSON="$case_dir/containers.json"
+  python3 - "$case_dir/wt" > "$FM_CONTAINER_JSON" <<'PY'
+import json, sys
+root = sys.argv[1]
+print(json.dumps([
+    {'Id':'owned', 'State':{'Running':True}, 'Mounts':[{'Type':'bind','Source':root+'/test'}]},
+    {'Id':'other', 'State':{'Running':True}, 'Mounts':[{'Type':'bind','Source':root+'-other/test'}]},
+]))
+PY
+  cat > "$case_dir/fakebin/docker" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_CONTAINER_LOG"
+case "$1" in
+  ps) printf 'owned\nother\n' ;;
+  inspect) cat "$FM_CONTAINER_JSON" ;;
+  stop) [ "${@: -1}" = owned ] ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$case_dir/fakebin/docker"
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-task-resources-lib.sh"
+  PATH="$case_dir/fakebin:$PATH" fm_task_stop_containers "$case_dir/wt" "$case_dir/cleanup.log" || fail 'owned container cleanup failed'
+  assert_grep 'stop --time 5 owned' "$FM_CONTAINER_LOG" 'owned container was not stopped'
+  assert_no_grep 'stop --time 5 other' "$FM_CONTAINER_LOG" 'another task container was stopped'
+  assert_grep 'stopped container owned' "$case_dir/cleanup.log" 'container cleanup was not recorded'
+  export DOCKER_HOST=tcp://remote.example:2375
+  : > "$FM_CONTAINER_LOG"
+  PATH="$case_dir/fakebin:$PATH" fm_task_stop_containers "$case_dir/wt" "$case_dir/cleanup.log" || fail 'remote context skip failed'
+  [ ! -s "$FM_CONTAINER_LOG" ] || fail 'cleanup inspected a remote Docker daemon'
+  pass 'container cleanup stops only task-local owners, records them, and never touches remote Docker'
+)
+
 test_leaked_tasktmp_process_is_reaped() {
   local case_dir rc pid
   case_dir=$(make_case leaked-tasktmp-reap)
@@ -4497,6 +4609,12 @@ test_retained_sources_still_reach_the_ordinary_refusal() {
   pass "present required sources still reach the ordinary teardown refusal"
 }
 
+if [ "${FM_TEARDOWN_RESOURCES_ONLY:-0}" = 1 ]; then
+  test_task_browser_profile_is_reaped || exit 1
+  test_task_containers_only_are_stopped || exit 1
+  exit 0
+fi
+
 test_missing_startup_source_refuses_before_cleanup
 test_unreadable_startup_source_refuses_before_cleanup
 test_missing_adapter_sibling_refuses_before_cleanup
@@ -4598,6 +4716,8 @@ test_not_found_status_after_abort_confirms_completion
 test_another_branchs_parked_run_is_never_touched
 test_own_autonomous_run_is_left_alone
 test_leaked_worktree_process_is_reaped
+test_task_browser_profile_is_reaped
+test_task_containers_only_are_stopped || exit 1
 test_leaked_tasktmp_process_is_reaped
 test_lsof_absent_reaps_tmux_process_group
 test_lsof_error_refuses_before_removal
