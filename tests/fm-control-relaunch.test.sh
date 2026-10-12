@@ -2416,6 +2416,54 @@ test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it() {
   pass "relaunch re-reads the backlog item instead of blindly re-running the transition"
 }
 
+test_relaunch_preserves_an_in_flight_captain_hold() {
+  local dir out rc=0 before after
+  if ! command -v tasks-axi >/dev/null 2>&1 || ! fm_tasks_axi_compatible; then
+    pass "skipped: compatible tasks-axi is not installed"
+    return 0
+  fi
+  dir=$(new_case captain-held rl81)
+  add_ship_task "$dir" rl81 claude
+  seed_backlog "$dir" rl81 in_flight
+  tasks-axi hold rl81 --kind captain --reason "merge still requires approval" \
+    --file "$dir/home/data/backlog.md" >/dev/null
+  before=$(cat "$dir/home/data/backlog.md")
+  break_tasks_axi_start "$dir"
+  out=$(run_control "$dir" rl81 relaunch --note "resume implementation without merge approval") || rc=$?
+  expect_code 0 "$rc" "restoring the same worker must preserve its outstanding captain call"$'\n'"$out"
+  after=$(cat "$dir/home/data/backlog.md")
+  [ "$before" = "$after" ] || fail "restoring a worker rewrote its captain hold or backlog"
+  [ "$(meta_field "$dir" rl81 window)" = fmses:fm-rl81 ] || fail "restoration changed the endpoint"
+  [ "$(meta_field "$dir" rl81 worktree)" = "$dir/wt" ] || fail "restoration changed the worktree"
+  [ "$(meta_field "$dir" rl81 yolo)" = off ] || fail "restoration changed merge authority"
+  pass "relaunch preserves an In-flight captain hold, existing endpoint and merge authority"
+}
+
+test_relaunch_still_refuses_other_holds_and_held_queued_work() {
+  local dir out rc hold_kind row_state before
+  if ! command -v tasks-axi >/dev/null 2>&1 || ! fm_tasks_axi_compatible; then
+    pass "skipped: compatible tasks-axi is not installed"
+    return 0
+  fi
+  for row_state in queued in_flight; do
+    for hold_kind in captain external; do
+      [ "$row_state:$hold_kind" != in_flight:captain ] || continue
+      dir=$(new_case "held-$row_state-$hold_kind" rl82)
+      add_ship_task "$dir" rl82 claude
+      seed_backlog "$dir" rl82 "$row_state"
+      tasks-axi hold rl82 --kind "$hold_kind" --reason "unresolved prerequisite" \
+        --file "$dir/home/data/backlog.md" >/dev/null
+      before=$(cat "$dir/home/data/backlog.md")
+      rc=0
+      out=$(run_control "$dir" rl82 relaunch --note "attempt bounded recovery") || rc=$?
+      expect_code 1 "$rc" "recovery must not dispatch held queued work or bypass external prerequisites"$'\n'"$out"
+      assert_contains "$out" "not dispatchable" "the backlog prerequisite must still refuse restoration"
+      [ "$before" = "$(cat "$dir/home/data/backlog.md")" ] || fail "a refused recovery changed its hold"
+    done
+  done
+  pass "relaunch keeps held queued work and external prerequisites ineligible"
+}
+
 test_relaunch_moves_a_drifted_item_back_in_flight() {
   local dir out rc=0
   command -v tasks-axi >/dev/null 2>&1 || {
@@ -2561,4 +2609,6 @@ test_herdr_reclaim_keeps_the_task_whole
 test_herdr_reclaim_of_a_secondmate_names_its_own_owner
 test_herdr_rebind_failure_from_a_plain_shell_names_the_real_cause
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it
+test_relaunch_preserves_an_in_flight_captain_hold
+test_relaunch_still_refuses_other_holds_and_held_queued_work
 test_relaunch_moves_a_drifted_item_back_in_flight
