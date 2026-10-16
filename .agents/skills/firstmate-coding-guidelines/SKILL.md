@@ -116,6 +116,16 @@ Never configure a deterministic suite-walk `commands.test` in any repository's n
 Targeted validation belongs to the no-mistakes evidence path, while CI owns broad deterministic regression coverage.
 Firstmate PR #3644 demonstrated the cost: pinning a 75-162-script walk took 32.7 minutes per validation, while removing it restored the 3.6-minute targeted-validation posture.
 
+## Engineering principles
+
+These are adapted from the pstack principles (https://github.com/cursor/plugins/tree/main/pstack) and apply to every change to firstmate itself.
+
+- Subtract before you add: remove the dead script, flag, or compatibility branch the change makes unnecessary before building the new piece.
+- Migrate callers, then delete the legacy path: when a new script, flag, or contract replaces an old one, move every caller and delete the old one in the same change unless a supported remote or older release still needs it, and name that consumer when you keep it.
+- Encode lessons in structure: when a correction would be the second written reminder of the same rule, make it a lint, test, or fail-closed check instead.
+- Fix root causes by pattern: grep for every instance of the defect's pattern and fix them together.
+- In the change summary, name each principle that shaped a decision and the specific choice it changed.
+
 ## Repo style rules
 
 - Put one full sentence per line in tracked Markdown.

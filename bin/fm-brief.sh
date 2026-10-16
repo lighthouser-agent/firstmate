@@ -819,10 +819,13 @@ $WAIT_BLOCK$INBOX_SECTION
 # Engineering discipline
 - Read the code paths your change touches before editing them, and settle the data shape and design before implementing anything that crosses a function boundary.
 - Make the smallest change that solves the task; delete dead code and needless layers before adding new ones.
-- Reproduce a defect first and fix its root cause, not the symptom.
+- When a new path replaces an old one for the same capability, migrate every caller and delete the old path in the same wave rather than keeping both.
+- Reproduce a defect first and fix its root cause, not the symptom; grep for the same pattern and fix every instance.
+- Turn a mistake that can recur into a check (type, lint, test, or CI step) rather than a written reminder.
 - Split multi-step work into small units that each end in a check, and pass each check before starting the next.
 - Prove behavior with the real artifact - the running command, page, or test output - never "it compiles"; the acceptance-evidence section below owns what the done line carries.
 - Before treating the work as review-ready, run the comment-audit pass in \`$FM_ROOT/.agents/skills/comment-audit/SKILL.md\` over your diff.
+- In your final report, name each principle above that shaped a decision and the specific choice it changed.
 
 # Project memory
 Only if this task produced new durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
