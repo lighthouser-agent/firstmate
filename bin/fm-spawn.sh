@@ -3787,12 +3787,6 @@ if [ "$RELAUNCH" -eq 1 ]; then
     # fallback for every recovery it cannot bind exactly
     # (docs/herdr-backend.md "Presentation spaces").
     #
-    # KNOWN LIMITATION (bead fm-herdr-rebind-leak-20260913): the tab minted
-    # below is registered with no abort cleanup, so a later refusal leaves that
-    # pane behind and a retry mints another. Documented in
-    # docs/agent-control.md rather than fixed here, because the remedy is
-    # machinery the ordinary flat spawn path does not have either.
-    #
     # Re-create the tab under the RECORDED herdr session. Without the explicit
     # session the container would resolve from the AMBIENT one
     # (${HERDR_SESSION:-default}), so reclaiming a task recorded on a named
@@ -4083,6 +4077,15 @@ EOF
     T="$ORCA_TERMINAL"
     ;;
   esac
+fi
+# Register only newly created flat endpoints, including a rebind; an adopted
+# relaunch endpoint is never ours to close on an aborted dispatch.
+if [ "$BACKEND" = herdr ] && [ "${HERDR_PROJECTED:-0}" -ne 1 ] &&
+  { [ "$RELAUNCH" -eq 0 ] || [ "$RELAUNCH_REBIND" -eq 1 ]; }; then
+  HERDR_PROJECTION_ABORT_CLEANUP=1
+  HERDR_PROJECTION_ABORT_SESSION=$HERDR_SES
+  HERDR_PROJECTION_ABORT_TASK_PANE=$HERDR_PANE_ID
+  HERDR_PROJECTION_ABORT_SEEDED_PANE=""
 fi
 if [ "$KIND" = secondmate ]; then
   FM_INHERITABLE_CONFIG=trace-context \
@@ -5640,8 +5643,8 @@ sleep 0.3
 SPAWN_LAUNCH_SENT=1
 spawn_send_literal "$T" ". $(shell_quote "$LAUNCH_FILE")"
 sleep 0.3
+HERDR_PROJECTION_ABORT_CLEANUP=0
 if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
-  HERDR_PROJECTION_ABORT_CLEANUP=0
   spawn_herdr_presentation_order_lock_release
 fi
 spawn_send_key "$T" Enter
