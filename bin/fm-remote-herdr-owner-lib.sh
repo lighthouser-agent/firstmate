@@ -39,7 +39,8 @@
 #       ssh      SSH_CONNECTION, SSH_CLIENT, or SSH_TTY in the environment, or
 #                an ancestor that is sshd or herdr's remote-client-bridge
 #                (matched on argv[0] and whole arguments only)
-#       launchd  XPC_SERVICE_NAME=<label>, with launchctl proving that job is
+#       launchd  XPC_SERVICE_NAME=<label> or the guard's preserved
+#                FM_REMOTE_HERDR_LAUNCH_AGENT=<label>, with launchctl proving that job is
 #                the owner in gui/<uid> or is loaded only in that domain
 #       worker   FM_REMOTE_JOB_ACTIVE=1, with launchctl proving that
 #                dev.firstmate.remote-job is loaded only in gui/<uid>
@@ -132,6 +133,12 @@ fm_remote_herdr_owner_birth() { # <pid>
   xpc_line=$(printf '%s\n' "$env" | grep -E '^XPC_SERVICE_NAME=' | head -1 || true)
   label=${xpc_line#XPC_SERVICE_NAME=}
   if [ -n "$uid" ] && [ -n "$xpc_line" ] \
+    && fm_remote_herdr_gui_job_proves_owner "$uid" "$label" "$pid"; then
+    printf 'launchd\n'
+    return 0
+  fi
+  label=$(printf '%s\n' "$env" | sed -n 's/^FM_REMOTE_HERDR_LAUNCH_AGENT=//p' | head -1)
+  if [ -n "$uid" ] && [ -n "$label" ] \
     && fm_remote_herdr_gui_job_proves_owner "$uid" "$label" "$pid"; then
     printf 'launchd\n'
     return 0

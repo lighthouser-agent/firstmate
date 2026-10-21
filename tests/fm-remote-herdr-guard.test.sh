@@ -32,7 +32,7 @@ SESSION=fm-remote
 # so a case can also present a host with NO lsof.
 TOOLS="$TMP_ROOT/tools"
 mkdir -p "$TOOLS"
-for tool in ps awk sed grep tr dirname basename sleep cat cp rm env bash sh id head; do
+for tool in ps awk sed grep tr dirname basename sleep cat cp rm env bash sh id head python3; do
   real=$(command -v "$tool") || fail "test host lacks $tool"
   ln -sf "$real" "$TOOLS/$tool"
 done
@@ -91,6 +91,7 @@ case "$*" in
     ;;
   "server --session "*)
     printf 'pid=%s session=%s\n' "$$" "${3:-}" > "$FM_FAKE_STATE/started"
+    python3 -c 'import os; assert os.getsid(0) == os.getppid()' || exit 1
     ;;
 esac
 exit 0
@@ -198,7 +199,7 @@ case "$probe_env" in
 esac
 pass "holder processes expose their environment to the owner library"
 
-# --- no server: the guard becomes the server ---------------------------------
+# --- no server: the guard starts a session-leading server --------------------
 
 new_case stopped
 guard
@@ -216,6 +217,8 @@ hold XPC_SERVICE_NAME=dev.firstmate.herdr.fm-remote
 BACKGROUND_PID=$HOLDER_PID
 hold XPC_SERVICE_NAME=0
 XPC_ZERO_PID=$HOLDER_PID
+hold XPC_SERVICE_NAME=0 FM_REMOTE_HERDR_LAUNCH_AGENT=dev.firstmate.herdr.fm-remote
+FORKED_PID=$HOLDER_PID
 hold FM_REMOTE_JOB_ACTIVE=1
 WORKER_PID=$HOLDER_PID
 hold SSH_CONNECTION='100.102.217.78 51234 100.100.1.2 22' SSH_CLIENT='100.102.217.78 51234 22'
@@ -249,7 +252,24 @@ assert_contains "$GUARD_OUT" "pid $WORKER_PID born in the Aqua login session (wo
   "the guard did not name the worker owner"
 pass "launchd and worker markers require gui-domain launchctl proof"
 
-# --- a foreign owner is stopped, then the guard becomes the server -----------
+new_case running
+printf '%s\n' "$FORKED_PID" > "$CASE_OWNER"
+load_job gui dev.firstmate.herdr.fm-remote
+guard
+expect_code 0 "$GUARD_RC" "the guard did not recognize its forked Aqua child"
+assert_not_started "the guard replaced its own session-leading child"
+assert_not_contains "$(herdr_calls)" 'server stop' "the guard stopped its forked Aqua child"
+assert_contains "$GUARD_OUT" '(launchd)' "the preserved job label did not prove Aqua birth"
+pass "the session-leading child retains verifiable Aqua ownership despite XPC_SERVICE_NAME=0"
+
+new_case running
+printf '%s\n' "$FORKED_PID" > "$CASE_OWNER"
+guard
+expect_code 0 "$GUARD_RC" "the guard failed to replace an unproved preserved label"
+assert_stop_before_start
+pass "a preserved job label without Aqua launchctl proof is not trusted"
+
+# --- a foreign owner is stopped, then a session-leading server starts --------
 
 new_case running
 printf '%s\n' "$BACKGROUND_PID" > "$CASE_OWNER"

@@ -926,6 +926,7 @@ worker_run_job() { # <account-home> <job-dir>
   stderr_reader=$!
   child_env=(
     /usr/bin/env -i
+    LANG=C LC_ALL=C
     "PATH=$FM_REMOTE_JOB_CHILD_PATH"
     "HOME=$account_home"
     "FM_HOME=$home"

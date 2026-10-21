@@ -13,7 +13,11 @@
 # Aqua audit session and login-keychain access; the login shell only gives the
 # server the account's own environment.
 # `herdr server` stays in the foreground under launchd, as verified in
-# docs/verification/runtime-backends.md under "fm-remote server birth and login-keychain access", so the final exec provides the complete supervision lifecycle.
+# docs/verification/runtime-backends.md under "fm-remote server birth and login-keychain access".
+# The session launcher forks once (launchd jobs are process-group leaders),
+# calls setsid in the child, and waits and forwards signals in the parent.
+# This preserves Aqua audit-session inheritance and launchd supervision while
+# satisfying Herdr saved machines' detached-server capability.
 #
 # Decision, made once per launch (exit codes matter under SuccessfulExit=false:
 # 0 tells launchd the job is done until something restarts it, non-zero asks
@@ -66,7 +70,10 @@ status_running() { # <status-json>
 
 start_server() {
   log "starting the herdr server for session $SESSION inside this launch agent (pid $$)"
-  exec "$HERDR_BIN" server --session "$SESSION"
+  # macOS resets XPC_SERVICE_NAME in forked children; retain the job label
+  # for the owner library, which still verifies it against the Aqua domain.
+  export FM_REMOTE_HERDR_LAUNCH_AGENT=${XPC_SERVICE_NAME:-}
+  exec python3 "$SCRIPT_DIR/fm-remote-herdr-session.py" "$HERDR_BIN" server --session "$SESSION"
 }
 
 STATUS=$(herdr_status)
