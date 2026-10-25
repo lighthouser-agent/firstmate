@@ -74,6 +74,8 @@ case "$HOME_DIR" in
     ;;
 esac
 STATE_DIR="${FM_STATE_OVERRIDE:-$HOME_DIR/state}"
+# In captain-direct mode the answer belongs in the mate's own conversation.
+fm_secondmate_direct_home "$HOME_DIR" && exit 0
 
 DESTINATION=
 DEST_RC=0

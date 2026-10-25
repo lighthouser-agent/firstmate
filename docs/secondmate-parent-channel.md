@@ -42,6 +42,22 @@ The mate home's own status scans treat that remote channel the same way: `status
 The remote reply adapter already mirrors every channel line into the parent home, so folding the channel again here would only spin spurious wakes and a phantom `parent-replies` task, while a `parent-replies.status` in a main home or in a local mate is an ordinary task log that keeps folding and waking.
 A missed-reply escalation includes the complete first sighting path and line number in readable shell-escaped form.
 
+## Captain-direct secondmates
+
+The [per-route setting](configuration.md#captain-direct-communication) lets the captain operate a secondmate directly in its own pane.
+While enabled, the mate answers there, including judgement and answers to explicitly routed requests, instead of appending to the parent channel.
+Script publishers intentionally suppress upward delivery, counting suppression as successful handling so cleanup can proceed without a delivery retry loop.
+Parent status scans, open-decision and unread folds, branch-outcome presentation, pending-reply recovery, automatic reconciliation nudges, and pending handoff retries skip that route.
+Ordinary workers and sibling secondmates remain unaffected.
+The route remains registered and explicit work handoff remains available; automatic routing should not select it.
+Endpoint liveness and bounded automatic relaunch remain enabled, including their recovery notifications, but parent observation of the mate's own outcome processing is disabled.
+Turning the switch off restores normal delivery of subsequent events and resumes reconciliation of preserved pending records; intentionally suppressed events are not replayed.
+Raw logs and outcomes remain available for deliberate inspection.
+
+For an already-running mate, apply the instruction printed by the toggle command in its pane; changing a file cannot erase instructions already loaded in a conversation.
+New sessions discover the effective setting in their startup digest, and newly generated charters defer to it.
+This switch does not delete previously queued notifications or answer preexisting decisions.
+
 ## What is deliberately not built
 
 - No mirror of the mate's chat: chat can mix outcomes with other conversation, so choosing which sentence is an outcome would itself be model behavior, and every harness exposes turn text differently.

@@ -744,6 +744,16 @@ The skill text owns the marker spelling, the tick order, and the reinforcement r
 Persistent secondmate routes live locally in `data/secondmates.md`.
 The concise single-line route contract is owned by the [`secondmate-provisioning` skill](../.agents/skills/secondmate-provisioning/SKILL.md#routing-table), including the parser-compatible fields, one-sentence summary requirement, `home:` pointer to the seeded charter, and limit on extra registry prose.
 
+### Captain-direct communication
+
+For a secondmate operated directly in its own pane, `config/secondmate-captain-direct/<id>` in the parent home opts that route out of parent communication.
+Absent means off, preserving the normal parent-channel behavior.
+`bin/fm-secondmate-direct.sh --help` owns the toggle command and live-session instruction handoff.
+The session-start digest lists enabled routes and gives a secondmate its effective communication instructions.
+[`secondmate-parent-channel.md`](secondmate-parent-channel.md#captain-direct-secondmates) owns the delivery and recovery consequences.
+For remote routes, the command mirrors the setting into the mate's `config/parent-captain-direct` through the existing remote control transport.
+That file is a delivery mirror, not an independently managed preference; retry a failed toggle to converge both sides.
+
 ### Remote routes and validation
 
 A remote route adds `host:` and `root:` before the existing fields and places the whole secondmate home on that SSH host; it does not make ordinary workers remotely placeable.

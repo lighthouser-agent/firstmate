@@ -398,6 +398,66 @@ test_drain_ignores_stale_channel_records_from_an_older_watcher() {
   pass "stale channel records from an older watcher are dropped, not presented"
 }
 
+test_captain_direct_local_route() {
+  local dir parent mate out before old_state=$STATE
+  dir="$TMP_ROOT/captain-direct"
+  parent="$dir/parent"
+  mate="$dir/mate"
+  mkdir -p "$parent/data" "$parent/config" "$parent/state"
+  seed_local_mate "$mate" "$parent"
+  printf '%s\n' "- mate - test mate (home: $mate; scope: test; projects: none; added 2026-09-01)" > "$parent/data/secondmates.md"
+  printf 'kind=secondmate\nhome=%s\n' "$mate" > "$parent/state/mate.meta"
+  printf 'needs-decision [key=direct]: private choice\nnote: private outcome\n' > "$parent/state/mate.status"
+  printf 'needs-decision [key=sibling]: ordinary choice\n' > "$parent/state/sibling.status"
+  FM_HOME="$parent" bash "$ROOT/bin/fm-secondmate-direct.sh" mate on >/dev/null || fail 'toggle on failed'
+  printf '%s\n' '{"schema":"fm-fleet-snapshot.v1","secondmate_current":{"records":[{"id":"mate","spawn_gen":"spawn-mate","reconcile_inventory":{"kind":"orphan_in_flight","ids":["stale"]}}]}}' > "$dir/snapshot.json"
+  out=$(FM_HOME="$parent" FM_STATE_OVERRIDE="$parent/state" bash "$ROOT/bin/fm-secondmate-reconcile.sh" notify --snapshot "$dir/snapshot.json" 2>&1) || fail 'direct reconcile must skip successfully'
+  [ -z "$out" ] || fail "direct reconcile must be silent: $out"
+  before=$(wc -c < "$parent/state/mate.status")
+  FM_HOME="$mate" bash "$ROOT/bin/fm-secondmate-report.sh" 'done' abcdef0123456789 private || fail 'direct report must suppress successfully'
+  [ "$(wc -c < "$parent/state/mate.status")" = "$before" ] || fail 'direct report leaked upward'
+  out=$(bash -c '
+    . "$1/bin/fm-parent-channel-lib.sh"
+    fm_parent_channel_report "$2" "$2/state" "failed: private failure" || exit
+    scan_open_decisions "$3/state"
+    scan_open_decisions_incremental "$3/state"
+    status_presentation_snapshot "$3/state"
+    scan_unread_surface_lines "$3/state"
+  ' _ "$ROOT" "$mate" "$parent") || fail 'direct folds failed'
+  case "$out" in *private*|*mate*) fail "direct route surfaced: $out" ;; esac
+  case "$out" in *sibling*) ;; *) fail 'sibling must remain visible' ;; esac
+  STATE="$parent/state"
+  out=$(scan_signals)
+  case "$out" in *mate.status*) fail 'watcher leaked direct traffic' ;; esac
+  STATE=$old_state
+  FM_HOME="$parent" FM_STATE_OVERRIDE="$parent/state" bash "$ROOT/bin/fm-branch-outcome.sh" append --task mate --verdict captain --summary private >/dev/null || fail 'outcome append failed'
+  out=$(FM_HOME="$parent" FM_STATE_OVERRIDE="$parent/state" bash "$ROOT/bin/fm-branch-outcome.sh" present) || fail 'outcome presentation failed'
+  printf '%s\n' "$out" | jq -e 'select(.silent == true and .verdict == "routine")' >/dev/null || fail 'direct outcome must be silent routine'
+  FM_HOME="$parent" bash "$ROOT/bin/fm-secondmate-direct.sh" mate off >/dev/null || fail 'toggle off failed'
+  out=$(bash -c '. "$1/bin/fm-classify-lib.sh"; scan_open_decisions "$2/state"' _ "$ROOT" "$parent")
+  case "$out" in *private*) ;; *) fail 'off must restore parent folds' ;; esac
+  FM_HOME="$mate" bash "$ROOT/bin/fm-secondmate-report.sh" 'done' abcdef0123456789 restored || fail 'restored report failed'
+  grep -q restored "$parent/state/mate.status" || fail 'off must restore upward delivery'
+  pass 'captain-direct toggle suppresses local delivery, folds, signals and outcomes; off restores delivery'
+}
+
+test_captain_direct_remote_publisher() {
+  local home="$TMP_ROOT/direct-remote" out
+  seed_remote_mate "$home"
+  mkdir -p "$home/bin"
+  touch "$home/AGENTS.md"
+  FM_HOME="$home" bash "$ROOT/bin/fm-remote-secondmate-control.sh" captain-direct mate on >/dev/null || fail 'remote toggle on failed'
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" bash "$ROOT/bin/fm-secondmate-report.sh" 'done' abcdef0123456789 remote-private || fail 'remote report suppression failed'
+  grep -q remote-private "$home/state/parent-replies.status" && fail 'remote publisher leaked upward'
+  FM_HOME="$home" bash "$ROOT/bin/fm-remote-secondmate-control.sh" captain-direct mate off >/dev/null || fail 'remote toggle off failed'
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" bash "$ROOT/bin/fm-secondmate-report.sh" 'done' abcdef0123456789 remote-restored || fail 'remote report restoration failed'
+  out=$(cat "$home/state/parent-replies.status")
+  case "$out" in *remote-restored*) ;; *) fail 'off must restore remote delivery' ;; esac
+  pass 'remote mirror suppresses upward reports and restores them when disabled'
+}
+
+test_captain_direct_local_route
+test_captain_direct_remote_publisher
 test_predicate_resolves_only_the_remote_channel
 test_resolver_predicates_on_home_shape_not_name
 test_remote_folds_omit_channel_and_keep_genuine_task

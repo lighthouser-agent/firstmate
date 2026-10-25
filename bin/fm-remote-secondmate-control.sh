@@ -13,6 +13,8 @@
 #   fm-remote-secondmate-control.sh sync <id> [<parent-commit>]
 #   fm-remote-secondmate-control.sh update <id>
 #   fm-remote-secondmate-control.sh retire <id> [--force]
+#   fm-remote-secondmate-control.sh captain-direct <id> on|off|show
+#     Mirror the parent's per-route communication setting; no lifecycle action.
 #
 # Remote placement ends here, but the second-mate agent always runs on the
 # Herdr backend in the dedicated fm-remote session, so launch refuses any other
@@ -437,6 +439,18 @@ cmd_retire() {
 case "${1:-}" in
   launch) shift; [ "$#" -ge 5 ] && [ "$#" -le 6 ] || usage; cmd_launch "$@" ;;
   relaunch) shift; [ "$#" -eq 4 ] || usage; cmd_relaunch "$@" ;;
+  captain-direct)
+    shift; [ "$#" -eq 2 ] || usage
+    validate_id "$1"; validate_home "$1"
+    [ ! -L "$TARGET_HOME/config" ] && [ ! -L "$TARGET_HOME/config/parent-captain-direct" ] || die 'unsafe captain-direct config path'
+    case "$2" in
+      on) mkdir -p "$TARGET_HOME/config"; : > "$TARGET_HOME/config/parent-captain-direct" ;;
+      off) rm -f "$TARGET_HOME/config/parent-captain-direct" ;;
+      show) ;;
+      *) usage ;;
+    esac
+    if [ -f "$TARGET_HOME/config/parent-captain-direct" ]; then printf 'captain-direct=on\n'; else printf 'captain-direct=off\n'; fi
+    ;;
   state) shift; [ "$#" -eq 1 ] || usage; validate_id "$1"; validate_home "$1"; state_value "$1" ;;
   route) shift; [ "$#" -eq 1 ] || usage; cmd_route "$1" ;;
   send) shift; [ "$#" -ge 2 ] && [ "$#" -le 3 ] || usage; cmd_send "$@" ;;

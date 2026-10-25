@@ -49,6 +49,9 @@
 # bin/ script (which sets its own SCRIPT_DIR) or directly by a test.
 _FM_CLASSIFY_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd 2>/dev/null)" || _FM_CLASSIFY_LIB_DIR="."
 
+# shellcheck source=bin/fm-secondmate-direct-lib.sh
+. "$_FM_CLASSIFY_LIB_DIR/fm-secondmate-direct-lib.sh"
+
 # The kernel name, read once at source time rather than forked by every status
 # stat helper below. These helpers mostly run inside $() subshells, where a lazy
 # cache would never persist. fm-wake-lib.sh's _FM_UNAME is reused when it is
@@ -1098,6 +1101,7 @@ scan_open_decisions() {  # <state>
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
+    fm_secondmate_direct_status "$state" "$f" && continue
     task=$(basename "$f"); task="${task%.status}"
     open=$(status_open_decisions "$f") || continue
     [ -n "$open" ] || continue
@@ -1394,6 +1398,7 @@ scan_open_decisions_incremental() {  # <state>
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
     task=$(basename "$f"); task="${task%.status}"
+    fm_secondmate_direct_status "$state" "$f" && continue
     open=$(status_open_decisions_incremental "$f") || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do
@@ -1414,6 +1419,7 @@ status_presentation_snapshot() {  # <state>
     [ "$f" = "$exclude" ] && continue
     [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
+    fm_secondmate_direct_status "$state" "$f" && continue
     size=$(_fm_status_file_size "$f") || return 1
     size=${size//[[:space:]]/}
     ident=$(_fm_open_decisions_file_ident "$f") || return 1
@@ -2029,6 +2035,7 @@ scan_unread_surface_lines() {  # <state>
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
     task=$(basename "$f"); task="${task%.status}"
+    fm_secondmate_direct_status "$state" "$f" && continue
     lines=$(status_new_lines_since_cursor "$f") || return 1
     [ -n "$lines" ] || continue
     while IFS= read -r line; do

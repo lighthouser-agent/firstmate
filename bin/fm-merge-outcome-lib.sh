@@ -97,7 +97,7 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin> [autho
     return 0
   fi
 
-  if [ -n "$destination" ]; then
+  if [ -n "$destination" ] && ! fm_secondmate_direct_home "$home"; then
     fm_parent_channel_append_once "$destination" "$(status_stamp_line "$line")" || status=1
   fi
   if [ "$status" -eq 0 ] && { [ "$origin" = poll ] || [ -z "$destination" ]; }; then

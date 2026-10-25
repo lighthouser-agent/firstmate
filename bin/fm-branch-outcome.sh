@@ -142,6 +142,13 @@ SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd
 # shellcheck source=bin/fm-classify-lib.sh
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 
+# Snapshot only opted-in secondmates, not ordinary workers with the same name.
+DIRECT_TASKS=$(for direct_flag in "${STATE%/*}/config/secondmate-captain-direct"/*; do
+  [ -f "$direct_flag" ] || continue
+  direct_id=${direct_flag##*/}
+  fm_secondmate_direct_status "$STATE" "$STATE/$direct_id.status" && printf '%s\n' "$direct_id"
+done | jq -Rn '[inputs]')
+
 STORE="$STATE/branch-outcomes.jsonl"
 CURSOR="$STATE/.branch-outcomes-cursor"
 PROCESSED="$STATE/.branch-outcomes-processed"
@@ -383,7 +390,9 @@ print_unread() {
     return 1
   fi
   [ -s "$STORE" ] || return 0
-  jq -c --argjson cursor "$cursor" 'select(.seq > $cursor)' "$STORE"
+  jq -c --argjson cursor "$cursor" --argjson direct "$DIRECT_TASKS" '
+    select(.seq > $cursor)
+    | if (.task as $t | $direct | index($t)) != null then . + {verdict:"routine", silent:true} else . end' "$STORE"
 }
 
 advance_cursor() { # <seq>
@@ -425,9 +434,9 @@ print_unprocessed() {
     return 1
   fi
   [ -s "$STORE" ] || return 0
-  jq -cn --argjson processed "$processed" --argjson cursor "$cursor" --argjson now "$(date +%s)" \
+  jq -cn --argjson direct "$DIRECT_TASKS" --argjson processed "$processed" --argjson cursor "$cursor" --argjson now "$(date +%s)" \
     "$RECORDED_AGO_JQ"'(reduce inputs as $row ([];
-        if length < 32 and $row.verdict == "captain" and $row.seq > $processed and $row.seq <= $cursor
+        if length < 32 and ($row.task as $t | $direct | index($t)) == null and $row.verdict == "captain" and $row.seq > $processed and $row.seq <= $cursor
         then . + [$row] else . end))[]
       | ("… [summary abbreviated; read the full outcome with bin/fm-branch-outcome.sh lookup --seqs \(.seq)]") as $note
       | .summary |= (if length > 1024 then .[:(1024 - ($note | length))] + $note else . end)
@@ -613,9 +622,10 @@ case "$CMD" in
       echo "error: refusing presentation because the outcome cursor or processed marker is out of order" >&2
       exit 1
     fi
-    if [ -s "$STORE" ] && ! jq -c --argjson cursor "$CURSOR_SEQ" --argjson processed "$PROCESSED_SEQ" \
+    if [ -s "$STORE" ] && ! jq -c --argjson direct "$DIRECT_TASKS" --argjson cursor "$CURSOR_SEQ" --argjson processed "$PROCESSED_SEQ" \
         --argjson now "$(date +%s)" "$RECORDED_AGO_JQ"'
         select(.seq > $cursor or (.verdict == "captain" and .seq > $processed))
+        | if (.task as $t | $direct | index($t)) != null then . + {verdict:"routine", silent:true} else . end
         | . + {unread: (.seq > $cursor)}
         | if .verdict == "captain" then . + {recordedAgo: recorded_ago} else . end' "$STORE"; then
       fm_lock_release "$LOCK"
