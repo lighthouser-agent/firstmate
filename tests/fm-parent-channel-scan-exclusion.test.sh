@@ -456,6 +456,27 @@ test_captain_direct_remote_publisher() {
   pass 'remote mirror suppresses upward reports and restores them when disabled'
 }
 
+test_captain_direct_id_ending_in_turn_ended() {
+  local home="$TMP_ROOT/direct-suffix" out
+  mkdir -p "$home/state" "$home/config/secondmate-captain-direct"
+  printf 'kind=secondmate\n' > "$home/state/mate.turn-ended.meta"
+  touch "$home/config/secondmate-captain-direct/mate.turn-ended"
+  printf 'needs-decision [key=private]: private suffix decision\n' > "$home/state/mate.turn-ended.status"
+  printf 'needs-decision [key=visible]: sibling decision\n' > "$home/state/sibling.status"
+  out=$(bash -c '
+    . "$1/bin/fm-classify-lib.sh"
+    scan_open_decisions "$2/state"
+  ' _ "$ROOT" "$home") || fail 'suffix decision scan failed'
+  case "$out" in *private*) fail "ID suffix leaked a direct decision: $out" ;; esac
+  case "$out" in *sibling*) ;; *) fail 'suffix exclusion must keep sibling decisions' ;; esac
+  bash -c '
+    . "$1/bin/fm-classify-lib.sh"
+    fm_secondmate_direct_status "$2/state" "$2/state/mate.turn-ended.turn-ended"
+  ' _ "$ROOT" "$home" || fail 'turn marker must preserve an ID ending in .turn-ended'
+  pass 'captain-direct preserves .turn-ended in the secondmate ID and excludes its decision'
+}
+
+test_captain_direct_id_ending_in_turn_ended
 test_captain_direct_local_route
 test_captain_direct_remote_publisher
 test_predicate_resolves_only_the_remote_channel

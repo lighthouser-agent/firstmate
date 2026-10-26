@@ -14,8 +14,10 @@ fm_secondmate_direct_status() { # <state> <status-or-turn-ended-path>
   local state=$1 path=$2 id
   [ -d "${state%/*}/config/secondmate-captain-direct" ] || return 1
   id=${path##*/}
-  id=${id%.status}
-  id=${id%.turn-ended}
+  case "$id" in
+    *.status) id=${id%.status} ;;
+    *.turn-ended) id=${id%.turn-ended} ;;
+  esac
   [ "$(awk -F= '$1 == "kind" {print $2; exit}' "$state/$id.meta" 2>/dev/null)" = secondmate ] || return 1
   fm_secondmate_captain_direct "${state%/*}" "$id"
 }
