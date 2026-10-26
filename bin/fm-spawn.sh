@@ -496,6 +496,8 @@
 # after publication removes the record it just wrote rather than leaving a
 # worker the backlog does not own. A relaunch re-reads the row instead of
 # re-running the transition, so an eligible In-flight item is left untouched.
+# Restoring an existing In-flight worker may preserve a captain hold; fresh
+# dispatch, external holds and dependency blockers remain ineligible.
 # The transition is
 # skipped entirely for --secondmate spawns (persistent agents are not work
 # items), on a config/backlog-backend=manual home, and in a markdown home that
@@ -3713,6 +3715,8 @@ herdr_projection_existing_meta_allows_flat() { # <meta>
 # a live pane. The authoritative mutation still runs under the meta lock below.
 BACKLOG_TRANSITION=0
 BACKLOG_ROW_STATE=
+BACKLOG_OPERATION=dispatch
+[ "$RELAUNCH" -ne 1 ] || BACKLOG_OPERATION=relaunch
 if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
   BACKLOG_TRANSITION=1
   if fm_backlog_row_probe "$DATA" "$ID"; then
@@ -3730,7 +3734,7 @@ if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
       echo "error: spawn refused - the supervision branch under the away-posture record may dispatch only queued unblocked work (already queued, or filed by the branch from the captain's away words); task $ID has no dispatchable backlog item in this home" >&2
       exit 1
     fi
-  elif ! fm_backlog_row_dispatchable "$BACKLOG_ROW_STATE"; then
+  elif ! fm_backlog_row_dispatchable "$BACKLOG_ROW_STATE" "$BACKLOG_OPERATION"; then
     echo "error: this home's backlog item $ID is not dispatchable in state $BACKLOG_ROW_STATE; refusing before creating its endpoint or local copy" >&2
     exit 1
   fi
@@ -5243,7 +5247,7 @@ fi
 # point below so every earlier launch-delivery failure remains unwindable.
 spawn_commit_backlog_transition() {
   [ "$BACKLOG_TRANSITION" = 1 ] || return 0
-  fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"
+  fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE" "$BACKLOG_OPERATION"
 }
 
 # The deferred-signal exit path's preservation report. A claim about preserved
@@ -5267,7 +5271,11 @@ spawn_report_preserved_state() {
     fi
     return 1
   fi
-  if [ "$FM_BACKLOG_ROW_STATE" = "in_flight no no" ]; then
+  if [ "$FM_BACKLOG_ROW_STATE" = "in_flight no no" ] || {
+    [ "$BACKLOG_OPERATION" = relaunch ] &&
+      [ "$FM_BACKLOG_ROW_STATE" = "in_flight yes no" ] &&
+      [ "$FM_BACKLOG_ROW_HOLD_KIND" = captain ];
+  }; then
     SPAWN_PRESERVED_CLAIM="verified preserved: its paired task record is present and its backlog item is In flight"
     return 0
   fi
