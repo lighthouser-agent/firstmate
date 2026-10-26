@@ -45,7 +45,8 @@
 # is created with its directory.
 #
 # Return codes, shared by every entry point that resolves the channel:
-#   0  resolved, or appended / already present
+#   0  resolved, appended / already present, or intentionally suppressed by
+#      captain-direct mode (report only; destination resolution is unchanged)
 #   1  this is a main home (no .fm-secondmate-home marker): nothing to report
 #   2  the identity marker exists but is unusable (symlink, NUL, bad id)
 #   3  the parent binding is missing or unreadable
@@ -169,6 +170,7 @@ fm_parent_channel_append_once() {  # <path> <line>
 # Publish one parent-facing line from <home>. See the return codes above.
 fm_parent_channel_report() {  # <home> <state> <line>
   local home=$1 state=$2 line=$3 destination rc=0
+  fm_secondmate_direct_home "$home" && return 0
   destination=$(fm_parent_channel_destination "$home" "$state") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
   fm_parent_channel_append_once "$destination" "$(status_stamp_line "$line")" || return 4

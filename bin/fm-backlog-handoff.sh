@@ -884,6 +884,7 @@ resume_pending_outboxes() {
       continue
       ;;
     esac
+    fm_secondmate_captain_direct "$FM_HOME" "$id" && continue
     with_remote_route_locks "$id" resume_remote_outbox "$id" "$outbox" || failed=1
   done
   return "$failed"
@@ -913,6 +914,7 @@ resume_pending_wakes() {
       ;;
     esac
     [ "$(secondmate_registry_field "$REG" "$id" remote 2>/dev/null || true)" = 1 ] || continue
+    fm_secondmate_captain_direct "$FM_HOME" "$id" && continue
     with_remote_route_locks "$id" resume_remote_wake "$id" || failed=1
   done
   return "$failed"

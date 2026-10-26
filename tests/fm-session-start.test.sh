@@ -782,6 +782,8 @@ EOF
 
   printf '%s\n' '- demo [no-mistakes] - a demo project (added 2026-07-01)' > "$home/data/projects.md"
   : > "$home/data/captain.md"
+  mkdir -p "$home/config/secondmate-captain-direct"
+  touch "$home/config/secondmate-captain-direct/direct-mate"
   # secondmates.md, captain-shared.md, and learnings.md deliberately absent
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
@@ -792,6 +794,7 @@ EOF
     and (.generated_epoch | type) == "number"
   ' "$home/state/home-summary.json" >/dev/null \
     || fail "a locked session start did not publish the home summary ledger"
+  assert_contains "$out" "CAPTAIN-DIRECT: direct-mate" "digest did not disclose the captain-direct route"
   assert_contains "$out" "data/projects.md" "digest did not label the projects.md section"
   assert_contains "$out" "- demo [no-mistakes] - a demo project (added 2026-07-01)" "digest did not print projects.md content"
 

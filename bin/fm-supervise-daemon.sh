@@ -1349,6 +1349,7 @@ housekeeping() {  # <state>
     local event record rest endpoint ident rc exclude
     exclude=$(status_scan_parent_channel_exclude "$state")
     for f in "$state"/*.status; do
+      fm_secondmate_direct_status "$state" "$f" && continue
       [ -e "$f" ] || [ -L "$f" ] || continue
       [ "$f" = "$exclude" ] && continue
       task=$(basename "$f"); task="${task%.status}"

@@ -371,6 +371,8 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 . "$SCRIPT_DIR/fm-features-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-secondmate-direct-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-direct-lib.sh"
 # shellcheck source=bin/fm-line-cap-lib.sh
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
 # shellcheck source=bin/fm-hold-reason-lib.sh
@@ -920,7 +922,9 @@ for meta in "$STATE"/*.meta; do
   fi
 
   status="$STATE/$id.status"
-  if [ -f "$status" ]; then
+  if fm_secondmate_direct_status "$STATE" "$status"; then
+    printf 'captain-direct: parent outcome traffic omitted; endpoint recovery remains enabled.\n'
+  elif [ -f "$status" ]; then
     print_status_tail "$status"
   else
     printf 'status tail: (no status file yet: %s)\n' "$status"
@@ -1028,6 +1032,15 @@ fi
 print_file_or_absent "$DATA/projects.md" "data/projects.md"
 fm_feature_enabled_in "$CONFIG" secondmate \
   && print_file_or_absent "$DATA/secondmates.md" "data/secondmates.md"
+# shellcheck source=bin/fm-parent-channel-lib.sh
+. "$SCRIPT_DIR/fm-parent-channel-lib.sh"
+for direct_flag in "$CONFIG/secondmate-captain-direct"/*; do
+  [ -f "$direct_flag" ] || continue
+  printf 'CAPTAIN-DIRECT: %s - do not consume or reply to its outcomes; route work only on explicit request. Endpoint recovery remains enabled.\n' "${direct_flag##*/}"
+done
+if fm_secondmate_direct_home "$FM_HOME"; then
+  printf '%s\n' 'CAPTAIN-DIRECT: communicate directly in this pane, not through the parent channel. This overrides charter parent-channel instructions, including marked replies, while enabled. Accept explicitly routed work as usual.'
+fi
 print_file_or_absent "$DATA/captain.md" "data/captain.md"
 print_file_or_absent "$DATA/captain-shared.md" "data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)"
 print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
