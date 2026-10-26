@@ -29,6 +29,16 @@ MR_STALE_HEAD=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 JQ_BIN=$(command -v jq) || fail "these tests read glab's JSON with the real jq, which was not found"
 REAL_MV=$(command -v mv) || fail "these tests need mv to simulate a failed poll publish"
 
+test_missing_url_prints_usage() {
+  local out rc=0
+  out=$(bash "$PR_MERGE" task-x1 2>&1) || rc=$?
+  expect_code 2 "$rc" 'missing URL refuses'
+  assert_contains "$out" 'error: invalid PR merge request' 'missing URL explains error'
+  assert_contains "$out" 'Usage: fm-pr-merge.sh <task-id> <pr-url>' 'missing URL gives usage'
+  pass 'missing URL prints error and usage'
+}
+test_missing_url_prints_usage
+
 # Build a fresh sandbox for one test case: a state dir with task metadata and a
 # directory for its forge-command mocks. Echoes the case directory.
 make_case() {

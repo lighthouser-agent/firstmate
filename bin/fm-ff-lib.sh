@@ -378,12 +378,13 @@ live_secondmate_meta_records() {
 # Guards are identical in both modes: never force/merge/stash; skip a dirty or
 # wrong-branch target and leave its work untouched. An optional secondmate id
 # enables the content-equivalent divergence proof and durable marker described
-# in this file's header.
+# in this file's header. The eighth argument enables that same proof for the
+# primary self-update, without creating a secondmate reconciliation record.
 FF_STATUS=""
 FF_INSTR=""
 ff_target() {
   local dir=$1 label=$2 base_mode=$3 allow_detached=${4:-no} ignore_seed_marker=${5:-no}
-  local secondmate_id=${6:-} reconciliation_state=${7:-}
+  local secondmate_id=${6:-} reconciliation_state=${7:-} reconcile_redundant=${8:-no}
   FF_STATUS="skipped"
   FF_INSTR=""
 
@@ -452,7 +453,7 @@ ff_target() {
     return 0
   fi
   if ! git -C "$dir" merge-base --is-ancestor HEAD "$base" 2>/dev/null; then
-    if [ -n "$secondmate_id" ] && [ -n "$reconciliation_state" ] \
+    if { [ "$reconcile_redundant" = yes ] || { [ -n "$secondmate_id" ] && [ -n "$reconciliation_state" ]; }; } \
       && divergence_is_redundant "$dir" "$local_rev" "$base_rev"; then
       instr=$(changed_instr "$dir" "$base")
       before=$(git -C "$dir" rev-parse --short HEAD)
@@ -460,7 +461,7 @@ ff_target() {
         after=$(git -C "$dir" rev-parse --short HEAD)
         FF_STATUS="updated"
         FF_INSTR="$instr"
-        secondmate_update_reconcile_clear "$reconciliation_state" "$secondmate_id" || true
+        [ -z "$reconciliation_state" ] || secondmate_update_reconcile_clear "$reconciliation_state" "$secondmate_id" || true
         if [ -n "$instr" ]; then
           echo "$label: reconciled redundant divergence $before..$after (instructions changed: $instr)"
         else

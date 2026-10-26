@@ -161,15 +161,17 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 
-if [ "$#" -lt 2 ]; then
+invalid_request() {
   echo "error: invalid PR merge request" >&2
+  echo 'Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>] [--allow-missing <check-name>] [-- <extra forge merge args>]' >&2
   exit 2
-fi
+}
+
+[ "$#" -ge 2 ] || invalid_request
 ID=$1
 RAW_URL=$2
 if ! fm_pr_task_id_valid "$ID" || ! fm_pr_url_parse "$RAW_URL"; then
-  echo "error: invalid PR merge request" >&2
-  exit 2
+  invalid_request
 fi
 URL=$FM_PR_URL
 PROVIDER=$FM_PR_PROVIDER
@@ -1460,8 +1462,7 @@ case "$PROVIDER" in
     [ "$gitlab_confirm_rc" -eq 0 ] || exit 0
     ;;
   *)
-    echo "error: invalid PR merge request" >&2
-    exit 2
+    invalid_request
     ;;
 esac
 

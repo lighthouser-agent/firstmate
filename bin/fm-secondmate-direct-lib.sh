@@ -23,7 +23,14 @@ fm_secondmate_direct_status() { # <state> <status-or-turn-ended-path>
 }
 
 fm_secondmate_direct_home() { # <mate-home>
-  local home=$1 id
+  local home=$1 id lib_dir
+  # Load lazily: the parent-channel library itself sources classify, which
+  # sources this library. A function guard avoids that cycle and repeat loads.
+  if ! declare -F fm_parent_channel_home_id >/dev/null; then
+    lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=bin/fm-parent-channel-lib.sh
+    . "$lib_dir/fm-parent-channel-lib.sh"
+  fi
   id=$(fm_parent_channel_home_id "$home") || return 1
   fm_secondmate_parent_record_parse "$home/.fm-secondmate-parent" || return 1
   case "$FM_SECONDMATE_PARENT_ROUTE" in

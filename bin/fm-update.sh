@@ -7,9 +7,9 @@
 # clones; remote routes update their configured code root on that host and then
 # fast-forward the persistent home to that root. FAST-FORWARD ONLY, exactly like
 # fm-fleet-sync.sh: never force, never create a merge commit, never stash.
-# A secondmate divergence whose complete local tree result is already present at
-# the target is reconciled with reset --keep; every other unsafe target is
-# skipped and reported, with divergence recorded durably by fm-ff-lib.sh.
+# A primary or secondmate divergence whose complete local tree result is already
+# present at the target is reconciled with reset --keep; every other unsafe target
+# is skipped and reported. Secondmate divergence is recorded by fm-ff-lib.sh.
 # A tracked-files update never touches the gitignored operational
 # dirs (data/, state/, config/, projects/, .no-mistakes/), so a secondmate's
 # in-flight work is never disrupted. Worktrees of this repo share one object
@@ -88,7 +88,7 @@ fi
 # --- main firstmate repo ---------------------------------------------------
 
 reread_firstmate="no"
-ff_target "$FM_ROOT" "firstmate" origin no no
+ff_target "$FM_ROOT" "firstmate" origin no no '' '' yes
 if [ "$FF_STATUS" = "updated" ]; then
   if [ -n "$FF_INSTR" ]; then
     reread_firstmate="yes"
