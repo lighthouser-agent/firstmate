@@ -141,6 +141,12 @@ SH
 printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
 case "${1:-} ${2:-}" in
   "api graphql")
+    case " $* " in
+      *reviewThreads*)
+        [ "${FM_TEST_REVIEW_FAIL:-0}" = 0 ] || exit 1
+        printf '%s\n' "${FM_TEST_REVIEW_THREADS:-[]}"
+        exit 0 ;;
+    esac
     printf '%s\n' \
       "state=${FM_TEST_GH_GRAPHQL_STATE:-MERGED}" \
       "merged=${FM_TEST_GH_GRAPHQL_MERGED:-true}" \
@@ -151,6 +157,7 @@ case "${1:-} ${2:-}" in
   "pr view")
     case " $* " in
       *statusCheckRollup*)
+        if [ -n "${FM_TEST_PR_FEEDBACK_JSON:-}" ]; then printf '%s\n' "$FM_TEST_PR_FEEDBACK_JSON"; exit 0; fi
         printf '%s\n' "{\"state\":\"OPEN\",\"isDraft\":false,\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"headRefOid\":\"${FM_TEST_GH_HEAD:-0123456789abcdef0123456789abcdef01234567}\",\"baseRefName\":\"main\",\"statusCheckRollup\":[{\"__typename\":\"CheckRun\",\"name\":\"ci\",\"status\":\"COMPLETED\",\"conclusion\":\"SUCCESS\"}]}"
         exit 0
         ;;
@@ -198,7 +205,7 @@ case " $* " in
     [ "${FM_TEST_GH_FAIL:-0}" = 0 ] || exit 1
     [ -z "${FM_TEST_GH_STATE_STARTED:-}" ] || : > "$FM_TEST_GH_STATE_STARTED"
     [ "${FM_TEST_GH_SLEEP:-0}" = 0 ] || sleep "$FM_TEST_GH_SLEEP"
-    printf '%s\n' "${FM_TEST_GH_STATE:-OPEN}"
+    if [ "${3:-}" = "${FM_TEST_GH_MERGED_URL:-none}" ]; then printf 'MERGED\n'; else printf '%s\n' "${FM_TEST_GH_STATE:-OPEN}"; fi
     ;;
 esac
 SH
@@ -577,7 +584,8 @@ test_invalid_entrypoints_have_zero_side_effects() {
     rc=$?
     set -e
     [ "$rc" -ne 0 ] || fail "merge entrypoint accepted invalid URL"
-    [ "$(cat "$dir/stderr")" = 'error: invalid PR merge request' ] || fail "merge invalid URL diagnostic was not fixed"
+    assert_grep 'error: invalid PR merge request' "$dir/stderr" 'merge invalid URL diagnostic'
+    assert_grep 'Usage: fm-pr-merge.sh <task-id> <pr-url>' "$dir/stderr" 'invalid URL includes usage'
     after=$(state_snapshot "$dir/home/state")
     [ "$after" = "$before" ] || fail "merge invalid URL changed prior state"
   done
@@ -949,6 +957,50 @@ run_poll() {
     bash "$dir/home/state/task-a.check.sh"
 }
 
+test_review_and_behind_feedback() {
+  local dir out reviews first behind state
+  dir=$(make_case review-feedback)
+  make_poll_fixture "$dir"
+  reviews='[{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[{"id":"thread-bot","isResolved":false,"comments":{"totalCount":1,"nodes":[{"id":"comment-1","updatedAt":"2026-10-26T01:00:00Z","author":{"login":"codex[bot]"}}]}}]}}}}}]'
+  first=$(FM_TEST_REVIEW_THREADS="$reviews" run_poll "$dir")
+  assert_contains "$first" 'review-findings: ' 'unresolved bot feedback emits a fingerprint'
+  out=$(FM_TEST_REVIEW_THREADS="${reviews/false/true}" run_poll "$dir")
+  [ -z "$out" ] || fail 'resolved review emitted feedback'
+  out=$(FM_TEST_REVIEW_FAIL=1 run_poll "$dir")
+  [ -z "$out" ] || fail 'failed review read emitted findings'
+  out=$(FM_TEST_REVIEW_THREADS="${reviews/comment-1/comment-2}" run_poll "$dir")
+  [ "$out" != "$first" ] || fail 'new review comment did not change fingerprint'
+  out=$(FM_TEST_REVIEW_THREADS="[{\"data\":{\"repository\":{\"pullRequest\":{\"reviewThreads\":{\"nodes\":[]}}}}},${reviews:1}" run_poll "$dir")
+  assert_equals "$first" "$out" 'findings on later review pages are included'
+
+  behind='{"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"BEHIND","headRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","baseRefOid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"}]}'
+  out=$(FM_TEST_PR_FEEDBACK_JSON="$behind" run_poll "$dir")
+  assert_contains "$out" 'behind: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' 'green conflict-free behind PR emits update event'
+  for state in FAILURE PENDING; do
+    out=$(FM_TEST_PR_FEEDBACK_JSON="${behind/SUCCESS/$state}" run_poll "$dir")
+    [ -z "$out" ] || fail 'red or pending PR emitted behind event'
+  done
+  out=$(FM_TEST_PR_FEEDBACK_JSON="${behind/MERGEABLE/CONFLICTING}" run_poll "$dir")
+  [ -z "$out" ] || fail 'conflicting PR emitted behind event'
+
+  write_poll_meta "$dir/home/state" task-a https://github.com/o/r/pull/1
+  seed_canonical_poll "$dir" task-a https://github.com/o/r/pull/1
+  FM_TEST_REVIEW_THREADS="$reviews" run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/first.out" 2> "$dir/first.err" \
+    || fail 'watcher did not deliver review event'
+  assert_grep 'review-findings:' "$dir/first.out" 'watcher wakes for new findings'
+  [ -f "$dir/home/state/task-a.check.sh" ] || fail 'review event retired merge monitoring'
+  ack_watcher_cycle "$dir/home/state" || fail 'could not acknowledge review wake'
+  write_poll_meta "$dir/home/state" task-z https://github.com/o/r/pull/2
+  seed_canonical_poll "$dir" task-z https://github.com/o/r/pull/2
+  rm -f "$dir/home/state/.last-check"
+  FM_TEST_REVIEW_THREADS="$reviews" FM_TEST_GH_MERGED_URL=https://github.com/o/r/pull/2 \
+    run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/second.out" 2> "$dir/second.err" \
+    || fail 'watcher did not continue past repeated feedback'
+  assert_no_grep 'review-findings:' "$dir/second.out" 'unchanged findings do not wake again'
+  assert_grep 'merged' "$dir/second.out" 'next task still gets its merge notification'
+  pass 'open PR review and behind events are bounded, deduplicated, and do not retire monitoring'
+}
+
 test_static_poll_contract() {
   local dir state out rc
   dir=$(make_case poll-contract)
@@ -1000,7 +1052,7 @@ test_static_poll_contract() {
   set -e
   [ "$rc" -eq 0 ] || fail "watcher did not surface merged poll"
   [ "$(grep -c '^check: .*: merged$' "$dir/watch.out")" -eq 1 ] || fail "watcher did not convert merged output into exactly one wake"
-  pass "static poll is silent except for one merged line and remains watcher-bounded"
+  pass "static poll without actionable feedback stays silent except for one merged line and remains watcher-bounded"
 }
 
 test_atomic_interruption_leaves_no_partial_artifact() {
@@ -1459,6 +1511,7 @@ test_teardown_removes_poll_artifacts() {
   printf 'data\n' > "$dir/home/state/task-a.pr-poll"
   printf 'registration\n' > "$dir/home/state/task-a.pr-poll-registration"
   printf 'trust\n' > "$dir/home/state/task-a.check-trust"
+  printf 'feedback\n' > "$dir/home/state/task-a.pr-feedback"
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -1473,6 +1526,7 @@ SH
   [ ! -e "$dir/home/state/task-a.pr-poll" ] || fail "teardown left the sidecar"
   [ ! -e "$dir/home/state/task-a.pr-poll-registration" ] || fail "teardown left the PR poll registration"
   [ ! -e "$dir/home/state/task-a.check-trust" ] || fail "teardown left the custom check registration"
+  [ ! -e "$dir/home/state/task-a.pr-feedback" ] || fail "teardown left the feedback cursor"
 
   dir=$(make_case teardown-retirement-receipt)
   fakebin="$dir/fakebin"
@@ -3470,6 +3524,7 @@ test_unpushed_named_head_refuses_registration
 test_direct_pr_unpushed_commit_refuses_registration
 test_valid_recording_and_merge_derivation
 test_rejected_metacharacter_bytes_are_inert
+test_review_and_behind_feedback
 test_static_poll_contract
 test_atomic_interruption_leaves_no_partial_artifact
 test_concurrent_watcher_sees_only_complete_publication

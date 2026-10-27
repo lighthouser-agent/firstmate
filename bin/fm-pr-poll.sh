@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Static watcher program for a validated pull request, merge request, or Gerrit
 # change poll sidecar.
-# It emits exactly one merged line for a merged change and stays silent
-# otherwise, including on every error, so a failed lookup can never be read as
-# a merge. The provider-tagged identity is data in the sidecar and is never
-# interpolated into this source: these bytes are identical for every task.
+# It emits exactly one merged line for a merged change. An open GitHub PR may
+# instead emit a review-findings fingerprint or a green, conflict-free behind
+# head/base pair; the watcher deduplicates these nonterminal events. Errors
+# stay silent and can never be read as a merge. The provider-tagged identity is
+# data in the sidecar and is never interpolated into this source: these bytes
+# are identical for every task.
 # Each provider is read through its own standard CLI, gh for GitHub, glab for
 # GitLab, and gerrit-axi for Gerrit, so an upstream checkout needs no extra
 # tooling to follow the first two. The Gerrit branch additionally needs jq,
@@ -66,7 +68,45 @@ case "$provider" in
     esac
     [ "$url" = "https://github.com/$owner/$repo/pull/$number" ] || exit 0
     state=$(gh pr view "$url" --json state -q .state 2>/dev/null) || exit 0
-    [ "$state" = MERGED ] && printf '%s\n' merged
+    if [ "$state" = MERGED ]; then
+      printf '%s\n' merged
+    elif [ "$state" = OPEN ] && command -v jq >/dev/null 2>&1; then
+      # Thread resolution, not reviewer identity or approval state, decides
+      # whether feedback needs work. Paginate so bot findings are not truncated.
+      # shellcheck disable=SC2016 # GraphQL variables are bound by gh, not Bash.
+      reviews=$(gh api graphql --paginate --slurp -f query='
+        query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 100, after: $endCursor) {
+                nodes { id isResolved comments(last: 1) { totalCount nodes { id updatedAt } } }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+          }
+        }' -f owner="$owner" -f repo="$repo" -F number="$number" 2>/dev/null) || reviews=
+      findings=$(printf '%s' "$reviews" | jq -ce '
+        if type != "array" or length == 0 or any(.[]; .errors != null or (.data.repository.pullRequest.reviewThreads.nodes | type) != "array")
+        then error("unreadable review threads") else
+          [.[].data.repository.pullRequest.reviewThreads.nodes[]
+           | select(.isResolved == false and .comments.totalCount > 0)
+           | {id, comments: .comments}] | sort_by(.id) | select(length > 0)
+        end' 2>/dev/null) || findings=
+      if [ -n "$findings" ]; then
+        fingerprint=$(printf '%s' "$findings" | shasum -a 256 | awk '{print $1}')
+        [ -z "$fingerprint" ] || printf 'review-findings: %s\n' "$fingerprint"
+      else
+        pr=$(gh pr view "$url" --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefOid,statusCheckRollup 2>/dev/null) || pr=
+        printf '%s' "$pr" | jq -er '
+          select(.state == "OPEN" and .isDraft == false and .mergeable == "MERGEABLE" and .mergeStateStatus == "BEHIND")
+          | select((.statusCheckRollup | type) == "array" and (.statusCheckRollup | length) > 0)
+          | select(all(.statusCheckRollup[];
+              (.__typename == "CheckRun" and .status == "COMPLETED" and (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED"))
+              or (.__typename == "StatusContext" and .state == "SUCCESS")))
+          | select((.headRefOid | test("^[0-9a-f]{40}$")) and (.baseRefOid | test("^[0-9a-f]{40}$")))
+          | "behind: " + .headRefOid + ":" + .baseRefOid' 2>/dev/null || true
+      fi
+    fi
     ;;
   gitlab)
     [ "${#host}" -ge 1 ] && [ "${#host}" -le 253 ] || exit 0

@@ -27,6 +27,42 @@ contract() {  # <home> <args...>
   FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$CONTRACT" "$@"
 }
 
+test_launcher_default_words_and_open_notes() {
+  local home out
+  home=$(make_home launcher-default)
+  mkdir -p "$home/config" "$home/data"
+  printf 'Keep approved work moving.\n' > "$home/config/afk-default-words"
+  cp "$ROOT/.tasks.toml" "$home/.tasks.toml"
+  FM_HOME="$home" "$ROOT/bin/fm-tasks-axi.sh" add approved-fix 'approved repair' \
+    --body 'Captain approved merging the repair once green.' >/dev/null || fail 'could not seed approval note'
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    "$ROOT/bin/fm-afk-launch.sh" enter --spend 2) || fail 'default-word entry failed'
+  assert_equals "$(contract "$home" words)" 'Keep approved work moving.' 'default words recorded'
+  assert_equals "$(contract "$home" field spend_max_concurrent_workers)" 2 'default words preserve spend'
+  assert_contains "$out" 'Captain approved merging the repair once green.' 'open approval note surfaced'
+  assert_contains "$out" 'informational' 'notes are not an entry gate'
+  printf 'Changed defaults.\n' > "$home/config/afk-default-words"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    "$ROOT/bin/fm-afk-launch.sh" enter >/dev/null || fail 'refresh failed'
+  assert_equals "$(contract "$home" words)" 'Keep approved work moving.' 'refresh preserves recorded words'
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    "$ROOT/bin/fm-afk-launch.sh" enter --words 'Only watch the repair.' >/dev/null || fail 'explicit entry failed'
+  assert_equals "$(contract "$home" words)" 'Only watch the repair.' 'explicit words replace defaults'
+  home=$(make_home launcher-quiet-default)
+  mkdir -p "$home/config"
+  printf 'Keep approved work moving.\n' > "$home/config/afk-default-words"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_TEST_SEAM=1 FM_TEST_HARNESS=kimi FM_AFK_MODE=quiet \
+    "$ROOT/bin/fm-afk-launch.sh" enter >/dev/null || fail 'quiet entry failed'
+  assert_equals "$(contract "$home" words)" '' 'quiet entry never uses away defaults'
+  home=$(make_home launcher-no-default)
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    "$ROOT/bin/fm-afk-launch.sh" enter >/dev/null || fail 'entry without defaults failed'
+  assert_equals "$(contract "$home" words)" '' 'absent defaults confer no mandate'
+  pass 'launcher records default words, preserves refresh and explicit overrides, and surfaces open notes'
+}
+test_launcher_default_words_and_open_notes
+
 # A confirmed record in the retired version 1 shape, exactly as the clause
 # model wrote it: scalar fields, a merge-grant list, the words block, then the
 # clauses and refused sections. A live away window may still hold one of these

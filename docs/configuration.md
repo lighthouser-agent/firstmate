@@ -184,6 +184,22 @@ The Claude Code mod reloads it on every `session.start`, including same-process 
 It also loads the preference lazily before any row that can draw ahead of that event, including during `claude --continue` restoration.
 This preference is local to each Firstmate home and is not part of secondmate inherited configuration.
 
+## Default away words
+
+`config/afk-default-words` is an optional captain-owned UTF-8 text file whose contents become the recorded mandate on a fresh plain `/afk` entry.
+Explicit `/afk` words replace it; a wordless refresh preserves the existing mandate, and quiet mode does not use it.
+Without the file, plain `/afk` records no mandate.
+The read-back compares open backlog notes with the recorded words and lists approvals not covered, informationally and without waiting for another reply.
+The existing spend cap, red-merge refusal, and never-set remain unchanged.
+
+Suggested contents (save only when the captain chooses this default):
+
+```text
+Keep things moving: merge PRs I have already approved once green; dispatch queued backlog items that are ready, within the spend cap; send workers back to fix review findings; decide execution-level questions per recommendations. Product trade-offs, production changes, and spending wait for me.
+```
+
+`bin/fm-afk-launch.sh` owns entry and default-file validation; the `afk` skill owns the approval comparison in its read-back.
+
 ## Pi supervision branch
 
 On a Pi primary, an in-process supervision branch handles eligible task-local wake rows and selected heartbeat reviews.

@@ -69,6 +69,12 @@ A `check: merge landed:` wake names exactly that moment; a stale, inactive-outco
 Claim the task's lease and run `bin/fm-teardown.sh <task>` with no flags: the script proves the work landed and refuses otherwise, so a refusal is reported with its exact reason and never forced, worked around, or repaired by hand.
 Report the cleanup in that event's outcome with the PR's URL.
 
+An armed task PR check reporting `review-findings:` means new unresolved review comments, including bot comments, need the implementation worker's attention even after it reported ready.
+In every posture, claim the task lease and steer that worker with `bin/fm-send.sh` to inspect and address the unresolved findings on the recorded PR, validate the fixes, and push the same branch; report verdict routine naming the repair request, not captain merely because review findings arrived.
+A green, conflict-free PR reporting `behind:` needs a routine base update, not a captain decision: its owning supervisor updates the PR branch through `gh-axi pr update-branch <number> --repo <owner/repo>` after re-reading the live PR to confirm it is still only behind with passing checks, then keeps its PR check armed while the new head's checks run.
+This forge-side update changes only the task's PR branch, never merges the PR or lands work; do not update a red, pending, conflicting, draft, or closed PR, and never force or discard work.
+When the PR belongs to a second mate's child, steer that mate to perform the update in its own home rather than acting on its child from here; report the update or steer as routine in every posture, and escalate only an actual failure or a higher-authority decision.
+
 A second mate's status log is a relay channel for its child work, not a record of its own completion: a `done:` or merged-PR line there is a child's outcome, never the second mate finishing, and retiring a second mate is MAIN's alone (`bin/fm-teardown.sh` refuses you).
 Report a second mate's signal wake from the status lines that wake newly presents; an older entry under OPEN DECISIONS is context, not news, unless a new line carries its key.
 A second mate's stale wake is a liveness event: report it even when it presents no new status lines.
@@ -117,7 +123,7 @@ The Postures section below is the one, bounded exception to the first three limi
 You run in one of two postures, and the posture is a file: the away-posture record `state/.afk-contract`, written only by `bin/fm-afk-contract.sh` in the same turn as the captain's `/afk` and archived by the return path on the captain's first ordinary message.
 Attended (no record): the role limits above apply exactly as written, main-owned rows never reach you, and MAIN processes every captain outcome you report.
 Away (the record exists): the wake message ends with a `POSTURE: AWAY` tail carrying the record's read-back verbatim; MAIN is parked, you take every row including check rows, decision rows, and heartbeat rows, and captain outcomes remain unprocessed for the return brief even though their visible transcript entries persist.
-The record is the captain's away words, recorded verbatim: the explicit instruction the captain gave before leaving, and the whole mandate.
+The record is the captain's away words, recorded verbatim from explicit entry words or their configured default: the whole mandate.
 No script parses them; you read them at the tail of every wake, decide by your own judgment whether the event in front of you is the moment they name, and act on them only through the guarded scripts under MAIN's standing authority - never more than MAIN could do attended - which enforce what a script can check without reading words:
 - `bin/fm-pr-merge.sh`: a merge the words call for proceeds when the pull request is green at its live head, synchronously, under the record lock; which pull request the words meant is your reading, and any green merge is mechanically permitted while the record exists.
   A red pull request, or one with a required check that has not reported, is never merged while away, whatever the words say, and `--allow-red` and `--allow-missing` are refused under the record: a merge the words want past a red or unreported check holds for the return.

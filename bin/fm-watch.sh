@@ -2905,8 +2905,28 @@ EOF
           fi
           wake "$reason"
         fi
+        if [ "$is_pr_poll" -eq 1 ]; then
+          # Only data fingerprints from the authenticated poll are remembered;
+          # publish the wake before the cursor so interruption cannot lose it.
+          feedback_cursor="$STATE/$id.pr-feedback"
+          feedback_key=$(printf '%s\n%s' "$url" "$out")
+          if fm_pr_private_file_valid "$feedback_cursor" 600 "$(fm_pr_file_device "$STATE")" \
+            && [ "$(cat "$feedback_cursor")" = "$feedback_key" ]; then
+            pr_poll_control_release || exit 1
+            continue
+          fi
+          fm_pr_regular_destination_on_device_or_absent "$feedback_cursor" "$(fm_pr_file_device "$STATE")" || exit 1
+          fm_wake_append check "$c" "$reason" || exit 1
+          feedback_tmp=$(mktemp "$STATE/.fm-pr-feedback.XXXXXX") || exit 1
+          if ! { printf '%s\n' "$feedback_key" > "$feedback_tmp" \
+            && chmod 0600 "$feedback_tmp" && mv -f -- "$feedback_tmp" "$feedback_cursor"; }; then
+            rm -f -- "$feedback_tmp"
+            exit 1
+          fi
+        else
+          fm_wake_append check "$c" "$reason" || exit 1
+        fi
         pr_poll_control_release || exit 1
-        fm_wake_append check "$c" "$reason" || exit 1
         touch "$STATE/.last-check"
         wake "$reason"
       fi

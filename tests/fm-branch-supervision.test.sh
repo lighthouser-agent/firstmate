@@ -69,6 +69,10 @@ test_branch_prompt_is_byte_stable_and_above_cache_floor() {
     *"A second mate's status log is a relay channel for its child work"*"retiring a second mate is MAIN's alone"*"Report a second mate's signal wake from the status lines that wake newly presents"*"A second mate's stale wake is a liveness event: report it even when it presents no new status lines."*) ;;
     *) fail "branch prompt lost the second-mate relay, signal-span, or stale-liveness rule" ;;
   esac
+  assert_contains "$out_a" 'In every posture, claim the task lease and steer that worker' 'review repair applies attended and away'
+  assert_contains "$out_a" 'report verdict routine naming the repair request' 'review repair is routine'
+  assert_contains "$out_a" 'gh-axi pr update-branch <number> --repo <owner/repo>' 'behind PR has a concrete routine action'
+  assert_contains "$out_a" 'steer that mate to perform the update in its own home' 'secondmate child ownership preserved'
   pass "branch prompt is byte-stable across homes, cwd, timezone, and time, above the cache floor"
 }
 

@@ -71,7 +71,12 @@
 #                              Write the away-posture record now, with no
 #                              separate confirmation, then print the entry
 #                              announcement and the read-back. With no words
-#                              while away it is a refresh; new words replace
+#                              on a fresh away entry, config/afk-default-words
+#                              supplies the words when present (never for quiet).
+#                              Open backlog notes are printed for the entry
+#                              read-back to identify uncovered approvals, never
+#                              as an entry gate. With no words while away it
+#                              is a refresh; new words replace
 #                              the mandate. On Pi this is the whole entry.
 #   fm-afk-launch.sh start     Capture the captain pane, then (unless the daemon
 #                              is already running) launch the daemon in a fresh
@@ -367,6 +372,7 @@ fm_afk_launch_record_require() {
 }
 
 fm_afk_launch_enter() {
+  local arg words_given=0 defaults state notes
   fm_afk_launch_catchup_pending && return 1
   if [ "${FM_AFK_MODE:-}" = quiet ]; then
     fm_afk_launch_quiet_needs_nothing
@@ -379,7 +385,30 @@ fm_afk_launch_enter() {
         return 3 ;;
     esac
   fi
+  for arg in "$@"; do
+    case "$arg" in --words|--words-file) words_given=1 ;; esac
+  done
+  defaults="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/afk-default-words"
+  if [ "${FM_AFK_MODE:-away}" != quiet ] && [ "$words_given" -eq 0 ] \
+    && ! fm_afk_contract_away_present "$FM_AFK_LAUNCH_STATE" \
+    && { [ -e "$defaults" ] || [ -L "$defaults" ]; }; then
+    if [ ! -f "$defaults" ] || [ -L "$defaults" ] || [ ! -r "$defaults" ]; then
+      fm_afk_launch_log "default away words must be a readable regular file: $defaults"
+      return 1
+    fi
+    set -- "$@" --words-file "$defaults"
+  fi
   "$FM_AFK_CONTRACT_CMD" enter "$@" || return
+  if fm_afk_contract_away_present "$FM_AFK_LAUNCH_STATE"; then
+    printf 'Open backlog notes for approval read-back (informational; compare with recorded words, list uncovered approvals, never wait):\n'
+    for state in queued in_flight held; do
+      if notes=$(FM_HOME="$FM_HOME" "$FM_AFK_LAUNCH_DIR/fm-tasks-axi.sh" list --state "$state" --limit 100000 --fields body 2>&1); then
+        printf '%s\n' "$notes"
+      else
+        printf '  %s notes unavailable; approval coverage is unconfirmed: %s\n' "$state" "$notes"
+      fi
+    done
+  fi
   fm_afk_launch_host_engine_note
 }
 
