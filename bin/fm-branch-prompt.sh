@@ -74,6 +74,7 @@ Report the cleanup in that event's outcome with the PR's URL.
 An armed task PR check reporting `review-findings:` means new unresolved review comments, including bot comments, need the implementation worker's attention even after it reported ready.
 In every posture, claim the task lease and steer that worker with `bin/fm-send.sh` to inspect and address the unresolved findings on the recorded PR, validate the fixes, and push the same branch; report verdict routine naming the repair request, not captain merely because review findings arrived.
 A green, conflict-free PR reporting `behind:` needs a routine base update, not a captain decision: its owning supervisor updates the PR branch through `gh-axi pr update-branch <number> --repo <owner/repo>` after re-reading the live PR to confirm it is still only behind with passing checks, then keeps its PR check armed while the new head's checks run.
+For an allowlisted GitHub Enterprise PR, derive its host from the recorded PR URL and add `--hostname <host>` to these forge calls rather than defaulting to github.com.
 This forge-side update changes only the task's PR branch, never merges the PR or lands work; do not update a red, pending, conflicting, draft, or closed PR, and never force or discard work.
 When the PR belongs to a second mate's child, steer that mate to perform the update in its own home rather than acting on its child from here; report the update or steer as routine in every posture, and escalate only an actual failure or a higher-authority decision.
 

@@ -6,6 +6,7 @@
 #        fm-control.sh <task-id> exit
 #        fm-control.sh <task-id> relaunch [--harness <name>] [--model <name>]
 #                                         [--effort <level>]
+#                                         [--captain-model-authorization <quoted-words>]
 #                                         (--note <text> | --note-file <path>)
 #
 # Why this exists, and how it differs from fm-send.sh. bin/fm-send.sh is the
@@ -199,6 +200,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
+# shellcheck source=bin/fm-captain-model-lib.sh
+. "$SCRIPT_DIR/fm-captain-model-lib.sh"
 # shellcheck source=bin/fm-omp-profile-lib.sh
 . "$SCRIPT_DIR/fm-omp-profile-lib.sh"
 # shellcheck source=bin/fm-exclude-tools-lib.sh
@@ -264,6 +267,8 @@ fi
 
 NEW_HARNESS=
 NEW_MODEL=
+CAPTAIN_MODEL_AUTHORIZATION=
+CAPTAIN_MODEL_AUTHORIZATION_SET=0
 NEW_EFFORT=
 HARNESS_SET=0
 MODEL_SET=0
@@ -279,6 +284,7 @@ for control_arg in "$@"; do
     case "$control_want_value" in
       harness) NEW_HARNESS=$control_arg; HARNESS_SET=1 ;;
       model) NEW_MODEL=$control_arg; MODEL_SET=1 ;;
+      captain-model-authorization) CAPTAIN_MODEL_AUTHORIZATION=$control_arg; CAPTAIN_MODEL_AUTHORIZATION_SET=1 ;;
       effort) NEW_EFFORT=$control_arg; EFFORT_SET=1 ;;
       note) NOTE=$control_arg; NOTE_SET=1 ;;
       note_file)
@@ -295,6 +301,8 @@ for control_arg in "$@"; do
     --harness=*) NEW_HARNESS=${control_arg#--harness=}; HARNESS_SET=1 ;;
     --model) control_want_value=model ;;
     --model=*) NEW_MODEL=${control_arg#--model=}; MODEL_SET=1 ;;
+    --captain-model-authorization) control_want_value=captain-model-authorization ;;
+    --captain-model-authorization=*) CAPTAIN_MODEL_AUTHORIZATION=${control_arg#--captain-model-authorization=}; CAPTAIN_MODEL_AUTHORIZATION_SET=1 ;;
     --effort) control_want_value=effort ;;
     --effort=*) NEW_EFFORT=${control_arg#--effort=}; EFFORT_SET=1 ;;
     --note) control_want_value=note ;;
@@ -314,12 +322,13 @@ if [ -n "$control_want_value" ]; then
 fi
 
 if [ "$VERB" != relaunch ]; then
-  [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] \
-    || die "--harness, --model, --effort, and --note apply to 'relaunch' only"
+  [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] && [ "$CAPTAIN_MODEL_AUTHORIZATION_SET" = 0 ] \
+    || die "--harness, --model, --effort, --note, and --captain-model-authorization apply to 'relaunch' only"
 fi
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
 [ "$EFFORT_SET" = 0 ] || [ -n "$NEW_EFFORT" ] || die "--effort requires a non-empty value"
+[ "$CAPTAIN_MODEL_AUTHORIZATION_SET" = 0 ] || [ -n "$CAPTAIN_MODEL_AUTHORIZATION" ] || die "--captain-model-authorization requires a non-empty value"
 case "$NEW_EFFORT" in
   ''|default|low|medium|high|xhigh|max|ultra) ;;
   *) die "--effort must be one of default, low, medium, high, xhigh, max, ultra" ;;
@@ -1041,6 +1050,7 @@ resolve_relaunch_profile() {
   else
     TARGET_EFFORT=default
   fi
+  fm_captain_model_check "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$TARGET_MODEL" 0 "$CAPTAIN_MODEL_AUTHORIZATION" || return 1
   if [ "$TARGET_EFFORT" = ultra ]; then
     "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$TARGET_MODEL" "$TARGET_EFFORT" || return 1
   fi
@@ -1227,6 +1237,7 @@ do_relaunch() {
   journal_write launching "${CHECKPOINT_LINES[@]}" "$note_line" "relaunch_tx=$RELAUNCH_TX"
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
+  [ "$CAPTAIN_MODEL_AUTHORIZATION_SET" = 0 ] || spawn_args+=(--captain-model-authorization "$CAPTAIN_MODEL_AUTHORIZATION")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
   if FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
       "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null; then

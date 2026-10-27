@@ -2314,11 +2314,13 @@ SH
   done
 }
 
-test_launch_environment_allowlist
-test_launch_environment_invalid_config_refuses
-test_launch_environment_inaccessible_config_refuses
-test_launch_environment_inherited_by_secondmate
-test_launch_environment_inheritance_preserves_on_source_errors
+if [ "${FM_SPAWN_CAPTAIN_MODELS_ONLY:-0}" != 1 ]; then
+  test_launch_environment_allowlist
+  test_launch_environment_invalid_config_refuses
+  test_launch_environment_inaccessible_config_refuses
+  test_launch_environment_inherited_by_secondmate
+  test_launch_environment_inheritance_preserves_on_source_errors
+fi
 
 test_worker_launch_delivers_role_scope() {
   local rec id out launch kind prompt envelope encoded brief_kind brief content first_line role_line task_line inbox
@@ -2708,11 +2710,162 @@ test_codex_permission_does_not_change_other_harnesses() {
   pass "Codex restricted mode leaves other harness launch flags unchanged"
 }
 
-test_codex_permission_modes
-test_codex_permission_invalid_refuses_before_mutation
-test_codex_permission_does_not_change_other_harnesses
-test_launch_preserves_inherited_git_config
-test_worker_launch_delivers_role_scope
+if [ "${FM_SPAWN_CAPTAIN_MODELS_ONLY:-0}" != 1 ]; then
+  test_codex_permission_modes
+  test_codex_permission_invalid_refuses_before_mutation
+  test_codex_permission_does_not_change_other_harnesses
+  test_launch_preserves_inherited_git_config
+  test_worker_launch_delivers_role_scope
+fi
+test_captain_only_models_refuse_without_authority() {
+  local rec id out status model words
+  id=captain-model-refusal
+  rec=$(make_spawn_case captain-model-refusal codex "$id")
+  read_case_record "$rec"
+  printf '# Captain-owned list\n\nfable\n' > "$HOME_DIR/config/captain-only-models"
+  for model in fable provider/fable; do
+    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model "$model")
+    status=$?
+    expect_code 1 "$status" "captain-only $model must refuse without authorization"
+    assert_contains "$out" "captain-only" "refusal must explain model authorization"
+    assert_absent "$HOME_DIR/state/$id.meta" "refusal published metadata"
+    [ ! -s "$LAUNCH_LOG" ] || fail "refused model reached launch"
+  done
+  for words in '' '   ' $'Approved\nmodel=fake' $'Approved\rquote'; do
+    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model fable --captain-model-authorization "$words")
+    status=$?
+    expect_code 1 "$status" "empty or metadata-unsafe authority must refuse"
+    assert_contains "$out" "--captain-model-authorization" "invalid authority diagnostic missing"
+    assert_absent "$HOME_DIR/state/$id.meta" "invalid quote published metadata"
+  done
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 1 "$status" "implicit defaults cannot bypass configured policy"
+  assert_contains "$out" "requires an explicit model" "implicit-default refusal missing"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" 'codex --model fable' --model ordinary)
+  status=$?
+  expect_code 1 "$status" "raw commands cannot bypass policy with a false --model"
+  assert_contains "$out" "not a raw launch command" "raw-command refusal missing"
+  printf 'fable ordinary\n' > "$HOME_DIR/config/captain-only-models"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model ordinary)
+  status=$?
+  expect_code 1 "$status" "malformed policy must refuse, not disable the guard"
+  assert_contains "$out" "one literal model per line" "malformed-policy diagnostic missing"
+  rm "$HOME_DIR/config/captain-only-models"
+  mkdir "$HOME_DIR/config/captain-only-models"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model ordinary)
+  status=$?
+  expect_code 1 "$status" "unreadable policy must refuse"
+  assert_contains "$out" "cannot read config/captain-only-models" "unreadable-policy diagnostic missing"
+  pass "captain-only guard refuses unapproved, implicit, raw, malformed, and unsafe launches"
+}
+
+test_captain_only_models_allow_and_record() {
+  local rec id out status quote mode model
+  quote='Use fable for this task; leave all other approvals unchanged.'
+  for mode in absent comments allowed approved; do
+    id="captain-model-$mode"
+    rec=$(make_spawn_case "$id" codex "$id")
+    read_case_record "$rec"
+    model=ordinary
+    case "$mode" in
+    comments) printf '# No restricted models\n\n' > "$HOME_DIR/config/captain-only-models" ;;
+    allowed | approved) printf 'fable' > "$HOME_DIR/config/captain-only-models" ;;
+    esac
+    if [ "$mode" = approved ]; then
+      model=provider/fable
+      out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model "$model" "--captain-model-authorization=$quote")
+    else
+      out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model "$model")
+    fi
+    status=$?
+    expect_code 0 "$status" "$mode model policy launch must succeed: $out"
+    assert_meta_profile "$HOME_DIR/state/$id.meta" codex "$model" default
+    if [ "$mode" = approved ]; then
+      assert_grep "captain_model_authorized_model=$model" "$HOME_DIR/state/$id.meta" "authorized model not recorded"
+      assert_grep "captain_model_authorization=$quote" "$HOME_DIR/state/$id.meta" "exact captain words not recorded"
+      assert_contains "$(cat "$LAUNCH_LOG")" "--model '$model'" "approved model did not reach launch"
+    fi
+  done
+  pass "captain-only guard preserves ordinary launches and records exact explicit authorization"
+}
+
+test_captain_only_models_batch() {
+  local rec out status id
+  rec=$(make_spawn_case captain-model-batch codex captain-batch-a captain-batch-b)
+  read_case_record "$rec"
+  printf 'fable\n' > "$HOME_DIR/config/captain-only-models"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "captain-batch-a=$PROJ_DIR" "captain-batch-b=$PROJ_DIR" --harness codex --model fable --captain-model-authorization 'Use fable for both listed tasks.')
+  status=$?
+  expect_code 0 "$status" "batch must forward explicit model authority to every pair: $out"
+  for id in captain-batch-a captain-batch-b; do
+    assert_grep 'captain_model_authorization=Use fable for both listed tasks.' "$HOME_DIR/state/$id.meta" "batch authorization was not forwarded"
+    assert_grep 'captain_model_authorized_model=fable' "$HOME_DIR/state/$id.meta" "batch authorized model was not recorded"
+  done
+  pass "batch spawns forward and record explicit model authorization per task"
+}
+
+test_captain_only_models_scout_and_secondmate() {
+  local rec id out status sm
+  id=captain-model-scout
+  rec=$(make_spawn_case "$id" codex "$id")
+  read_case_record "$rec"
+  printf 'fable\n' > "$HOME_DIR/config/captain-only-models"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --scout --model fable)
+  status=$?
+  expect_code 1 "$status" "scout must obey captain-only model policy"
+  assert_contains "$out" "captain-only" "scout authorization refusal missing"
+  assert_absent "$HOME_DIR/state/$id.meta" "refused scout published metadata"
+
+  id=captain-model-secondmate
+  rec=$(make_spawn_case "$id" codex "$id")
+  read_case_record "$rec"
+  printf 'fable\n' > "$HOME_DIR/config/captain-only-models"
+  printf 'codex fable medium\n' > "$HOME_DIR/config/secondmate-harness"
+  sm="$CASE_DIR/secondmate-home"
+  make_seeded_secondmate_home "$sm" "$id"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
+  status=$?
+  expect_code 1 "$status" "resolved secondmate model pin must obey captain-only policy"
+  assert_contains "$out" "model 'fable' is captain-only" "resolved secondmate pin was not checked"
+  assert_absent "$HOME_DIR/state/$id.meta" "refused secondmate published metadata"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate --captain-model-authorization 'Use fable for this secondmate launch.')
+  status=$?
+  expect_code 0 "$status" "authorized secondmate model pin must launch: $out"
+  assert_grep 'captain_model_authorized_model=fable' "$HOME_DIR/state/$id.meta" "resolved secondmate authorization not recorded"
+  pass "captain-only model policy covers scouts and resolved secondmate pins"
+}
+
+test_captain_only_models_inherit() {
+  local d src dest
+  d="$TMP_ROOT/captain-model-inherit"
+  src="$d/source/config"
+  dest="$d/destination/config"
+  mkdir -p "$src" "$dest" "$d/destination/state"
+  # shellcheck source=bin/fm-config-inherit-lib.sh
+  . "$ROOT/bin/fm-config-inherit-lib.sh"
+  printf 'fable\n' > "$src/captain-only-models"
+  propagate_inheritable_config "$src" "$dest" || fail "captain model policy did not inherit"
+  cmp -s "$src/captain-only-models" "$dest/captain-only-models" || fail "inherited policy bytes changed"
+  printf 'ordinary\n' > "$dest/captain-only-models"
+  propagate_inheritable_config "$src" "$dest" || fail "captain model policy did not converge"
+  cmp -s "$src/captain-only-models" "$dest/captain-only-models" || fail "primary policy did not replace destination drift"
+  rm "$src/captain-only-models"
+  propagate_inheritable_config "$src" "$dest" || fail "captain model policy absence did not converge"
+  assert_absent "$dest/captain-only-models" "absent primary policy was not removed"
+  pass "captain-only model policy inherits, converges, and mirrors primary absence"
+}
+
+test_captain_only_models_refuse_without_authority
+test_captain_only_models_allow_and_record
+test_captain_only_models_batch
+test_captain_only_models_scout_and_secondmate
+test_captain_only_models_inherit
+if [ "${FM_SPAWN_CAPTAIN_MODELS_ONLY:-0}" = 1 ]; then
+  printf '# captain-only model dispatch tests passed\n'
+  exit 0
+fi
+
 test_no_profile_keeps_claude_profile_defaults
 test_claude_launch_brief_publishes_record_doorbell
 test_claude_secondmate_launch_brief_publishes_into_its_own_home

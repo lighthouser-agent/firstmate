@@ -98,6 +98,11 @@
 #   only a shell that will not go refuses.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
+#   --captain-model-authorization <quoted-words> records fresh, single-line captain
+#   authorization for a model listed in config/captain-only-models. This optional
+#   policy is owned by docs/configuration.md "Captain-only models". It applies
+#   after model resolution, before provisioning, including relaunches, batches,
+#   and remote secondmates; previous authorization is never reused.
 #   --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
@@ -909,6 +914,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-dod-lib.sh"
 # shellcheck source=bin/fm-features-lib.sh
 . "$SCRIPT_DIR/fm-features-lib.sh"
+# shellcheck source=bin/fm-captain-model-lib.sh
+. "$SCRIPT_DIR/fm-captain-model-lib.sh"
 # shellcheck source=bin/fm-role-lib.sh
 . "$SCRIPT_DIR/fm-role-lib.sh"
 # shellcheck source=bin/fm-trace-context-lib.sh
@@ -935,6 +942,8 @@ KIND=ship
 KIND_SET=0
 HARNESS_ARG=
 MODEL=
+CAPTAIN_MODEL_AUTHORIZATION=
+CAPTAIN_MODEL_AUTHORIZATION_SET=0
 EFFORT=
 BACKEND_ARG=
 MODE=
@@ -975,6 +984,10 @@ for a in "$@"; do
     model)
       MODEL=$a
       MODEL_SET=1
+      ;;
+    captain-model-authorization)
+      CAPTAIN_MODEL_AUTHORIZATION=$a
+      CAPTAIN_MODEL_AUTHORIZATION_SET=1
       ;;
     effort)
       EFFORT=$a
@@ -1037,6 +1050,11 @@ for a in "$@"; do
     MODEL=${a#--model=}
     MODEL_SET=1
     ;;
+  --captain-model-authorization) want_value=captain-model-authorization ;;
+  --captain-model-authorization=*)
+    CAPTAIN_MODEL_AUTHORIZATION=${a#--captain-model-authorization=}
+    CAPTAIN_MODEL_AUTHORIZATION_SET=1
+    ;;
   --effort) want_value=effort ;;
   --effort=*)
     EFFORT=${a#--effort=}
@@ -1092,6 +1110,15 @@ done
   echo "error: --model requires a non-empty value" >&2
   exit 1
 }
+if [ "$CAPTAIN_MODEL_AUTHORIZATION_SET" -eq 1 ]; then
+  fm_captain_model_words_check "$CAPTAIN_MODEL_AUTHORIZATION" || exit 1
+fi
+
+captain_model_authorization_meta() {
+  [ "$CAPTAIN_MODEL_AUTHORIZATION_SET" -eq 1 ] || return 0
+  printf 'captain_model_authorized_model=%s\ncaptain_model_authorization=%s\n' "$1" "$CAPTAIN_MODEL_AUTHORIZATION"
+}
+
 [ "$EFFORT_SET" -eq 0 ] || [ -n "$EFFORT" ] || {
   echo "error: --effort requires a non-empty value" >&2
   exit 1
@@ -1322,6 +1349,11 @@ spawn_remote_secondmate() {
       [ -n "$effort" ] || effort=-
     fi
   fi
+  if ! fm_captain_model_check "$CONFIG" "$model" 0 "$CAPTAIN_MODEL_AUTHORIZATION"; then
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    return 1
+  fi
   # A remote second mate always runs on Herdr: its server belongs to the host's
   # own GUI login session, so the endpoint outlives every SSH connection that
   # supervises it. bin/fm-remote-doctor.sh gates that host on the same
@@ -1501,6 +1533,7 @@ spawn_remote_secondmate() {
     echo "yolo=off"
     echo "tasktmp="
     echo "model=${model#-}"
+    captain_model_authorization_meta "${model#-}"
     echo "effort=${effort#-}"
     echo "home=$home"
     echo "projects=$(secondmate_registry_field "$DATA/secondmates.md" "$id" projects)"
@@ -2004,6 +2037,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   shared_args=()
   [ -z "$HARNESS_ARG" ] || shared_args+=(--harness "$HARNESS_ARG")
   [ -z "$MODEL" ] || shared_args+=(--model "$MODEL")
+  [ "$CAPTAIN_MODEL_AUTHORIZATION_SET" -eq 0 ] || shared_args+=(--captain-model-authorization "$CAPTAIN_MODEL_AUTHORIZATION")
   [ -z "$EFFORT" ] || shared_args+=(--effort "$EFFORT")
   [ -z "$BACKEND_ARG" ] || shared_args+=(--backend "$BACKEND_ARG")
   # One delivery contract applies to every pair in a batch, exactly like the shared
@@ -3115,6 +3149,7 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
     fi
   fi
 fi
+fm_captain_model_check "$CONFIG" "$MODEL" "$RAW_LAUNCH" "$CAPTAIN_MODEL_AUTHORIZATION" || exit 1
 fm_backend_validate_harness "$BACKEND" "$HARNESS" || exit 1
 # Ultra is an explicit native capability, never a Pi thinking-level alias.
 # Validate the fully resolved profile before worktree or endpoint provisioning.
@@ -6692,7 +6727,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort opencode_version account account_provider omp_profile busy_gen spawn_gen approval_mode traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id rex_server rex_session_id rex_window_id rex_block_id t3_thread_id t3_project_id tern_session_id tern_tab_id tern_block_id home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model captain_model_authorized_model captain_model_authorization effort opencode_version account account_provider omp_profile busy_gen spawn_gen approval_mode traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id rex_server rex_session_id rex_window_id rex_block_id t3_thread_id t3_project_id tern_session_id tern_tab_id tern_block_id home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -6722,6 +6757,7 @@ preserve_relaunch_meta() {
   [ -z "$EXTERNAL_BACKUP_REMOTE" ] || echo "backup_remote=$EXTERNAL_BACKUP_REMOTE"
   [ -z "$EXTERNAL_BACKUP_REMOTE" ] || echo "backup_prefix=$EXTERNAL_BACKUP_PREFIX"
   echo "model=${MODEL:-default}"
+  captain_model_authorization_meta "${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
   # The detected OpenCode major, recorded so fm-control sends the exit key this
   # agent's TUI understands. Written only when a version was resolved, so a

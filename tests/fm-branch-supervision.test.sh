@@ -72,6 +72,7 @@ test_branch_prompt_is_byte_stable_and_above_cache_floor() {
   assert_contains "$out_a" 'In every posture, claim the task lease and steer that worker' 'review repair applies attended and away'
   assert_contains "$out_a" 'report verdict routine naming the repair request' 'review repair is routine'
   assert_contains "$out_a" 'gh-axi pr update-branch <number> --repo <owner/repo>' 'behind PR has a concrete routine action'
+  assert_contains "$out_a" '--hostname <host>' 'behind updates retain the recorded GitHub Enterprise host'
   assert_contains "$out_a" 'steer that mate to perform the update in its own home' 'secondmate child ownership preserved'
   pass "branch prompt is byte-stable across homes, cwd, timezone, and time, above the cache floor"
 }

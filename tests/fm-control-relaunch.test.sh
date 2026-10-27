@@ -2969,6 +2969,39 @@ SH
 test_relaunch_off_opencode_removes_tracked_wiring
 test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
+test_relaunch_captain_only_model_authority() {
+  local dir out rc quote
+  dir=$(new_case captain-model-policy captain-relaunch)
+  add_ship_task "$dir" captain-relaunch claude
+  mkdir -p "$dir/home/config"
+  printf 'fable\n' > "$dir/home/config/captain-only-models"
+  printf 'captain_model_authorization=Prior approval must not authorize a new launch.\ncaptain_model_authorized_model=fable\n' >> "$dir/home/state/captain-relaunch.meta"
+  cp "$dir/home/state/captain-relaunch.meta" "$dir/prior-meta"
+  out=$(run_control "$dir" captain-relaunch relaunch --model fable --note 'Continue the approved task.'); rc=$?
+  expect_code 1 "$rc" "relaunch cannot reuse authorization from an earlier record"
+  assert_contains "$out" 'captain-only' 'relaunch must explain the missing fresh authorization'
+  [ ! -s "$dir/fake/literal" ] || fail 'refused model sent lifecycle text to the running worker'
+  cmp -s "$dir/prior-meta" "$dir/home/state/captain-relaunch.meta" || fail 'refused model changed prior metadata'
+  [ "$(cat "$dir/fake/command")" = claude ] || fail 'refused model stopped the running worker'
+  quote='Use fable for this replacement launch.'
+  out=$(run_control "$dir" captain-relaunch relaunch --model fable --captain-model-authorization "$quote" --note 'Continue the approved task.'); rc=$?
+  expect_code 0 "$rc" "relaunch with fresh quoted model authority must succeed: $out"
+  [ "$(meta_field "$dir" captain-relaunch captain_model_authorization)" = "$quote" ] || fail 'relaunch did not record fresh exact words'
+  [ "$(meta_field "$dir" captain-relaunch captain_model_authorized_model)" = fable ] || fail 'relaunch did not record authorized model'
+  assert_grep '/exit' "$dir/fake/literal" 'authorized relaunch did not replace the worker'
+  out=$(run_control "$dir" captain-relaunch relaunch --model ordinary --note 'Continue on an unrestricted model.'); rc=$?
+  expect_code 0 "$rc" "unrestricted replacement should not need prior authority: $out"
+  [ -z "$(meta_field "$dir" captain-relaunch captain_model_authorization)" ] || fail 'old authorization survived an unrestricted replacement'
+  [ -z "$(meta_field "$dir" captain-relaunch captain_model_authorized_model)" ] || fail 'old authorized model survived an unrestricted replacement'
+  pass 'captain-only relaunch refuses before stopping a worker and requires fresh recorded authorization'
+}
+
+test_relaunch_captain_only_model_authority
+if [ "${FM_CONTROL_CAPTAIN_MODELS_ONLY:-0}" = 1 ]; then
+  printf '# captain-only model relaunch tests passed\n'
+  exit 0
+fi
+
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven

@@ -1681,6 +1681,27 @@ A malformed or unreadable file refuses every fresh ship or scout spawn until it 
 Firstmate cannot see which part of a worker's life uses the resource, so the number bounds whole workers from launch to handoff, and the tightest resource every worker needs should decide it.
 [`bin/fm-project-capacity-lib.sh`](../bin/fm-project-capacity-lib.sh) owns the file format, what holds a place, and why concurrent spawns cannot both take the last one.
 
+## Captain-only models (config/captain-only-models)
+
+The optional local, gitignored `config/captain-only-models` is a captain-owned deny-by-default list of model selections that require explicit authorization for each launch.
+Use one literal, case-sensitive model ID per line; blank lines and lines beginning with `#` are ignored.
+Entries accept letters, digits, `_`, `.`, `/`, `:`, `@`, `+`, and `-`, not patterns or whitespace.
+An entry matches either the complete selected ID or its final slash-separated component, so `fable` also protects `provider/fable`; other aliases must be listed explicitly.
+Absent, empty, or comment-only configuration leaves existing launch behavior unchanged.
+An unreadable or malformed file refuses launch rather than disabling the protection.
+With any entries configured, launches require an explicit resolved model and a canonical harness, because an implicit runtime default or arbitrary launch command cannot be checked.
+Secondmate model pins are resolved before the check; ships, scouts, batch spawns, remote secondmates, and relaunches use the same policy.
+
+For a listed model, pass `--captain-model-authorization '<captain quoted words>'` to `bin/fm-spawn.sh` for that invocation only.
+The argument must contain non-whitespace text on one line without control characters, and may also use `--captain-model-authorization=...` syntax.
+The caller must supply the captain's actual authorization, not an agent recommendation or a quota-based choice; the flag records that assertion rather than authenticating who wrote the words.
+Successful launches record the exact quote and selected model as `captain_model_authorization=` and `captain_model_authorized_model=` in task metadata.
+Authorization from a previous launch is never reused automatically.
+`bin/fm-control.sh relaunch` accepts the same flag, checks the resolved replacement model before stopping the existing worker, and forwards the words to the launch owner.
+This flag grants only model-selection authority, never merge, spend, destructive-action, or publication authority.
+The file is inherited into secondmate homes through the existing primary-authoritative inherited-local-material mechanism; configuring it does not alter dispatch profiles or select another model automatically.
+No default list is installed: the captain creates and edits the live file separately.
+
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
 `config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that firstmate reads before dispatching a crewmate or scout.
