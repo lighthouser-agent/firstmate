@@ -1530,8 +1530,13 @@ test_spawn_leases_slot_creates_thread_and_starts_launch_turn() {
   thread=$(bash -c '. "$1"; fm_meta_get "$2" t3_thread_id' _ "$ROOT/bin/fm-backend.sh" "$state/$id.meta")
   case "$thread" in mcp:*) ;; *) fail "meta t3_thread_id should be the id T3 assigned, got '$thread'" ;; esac
   [ "$(t3_dispatch_types)" = "t3_thread_launch t3_thread_send" ] || fail "spawn must launch an idle thread, then send the brief, got '$(t3_dispatch_types)'"
-  [ "$(t3_log_line_of 'r.tool === "treehouse" && r.args === "get --lease --lease-holder '"$id"'" && r.cwd === "'"$proj"'"')" -gt 0 ] \
-    || fail "spawn must lease the slot with treehouse get --lease --lease-holder <id> from the project"
+  local pool_common pool_key pool_root
+  pool_common=$(git -C "$proj" rev-parse --path-format=absolute --git-common-dir)
+  pool_common=$(cd "$pool_common" && pwd -P)
+  pool_key=$(printf '%s' "$pool_common" | git hash-object --stdin)
+  pool_root="${TREEHOUSE_ROOT:-$SPAWN_HOME}/.treehouse/firstmate-clones/$pool_key"
+  [ "$(t3_log_line_of 'r.tool === "treehouse" && r.args === "get --root '"$pool_root"' --lease --lease-holder '"$id"'" && r.cwd === "'"$proj"'"')" -gt 0 ] \
+    || fail "spawn must lease the slot from the clone-specific pool with the task lease holder"
   local create turn
   create=$(t3_log_line_of 'r.tool === "t3_thread_launch"')
   turn=$(t3_log_line_of 'r.tool === "t3_thread_send"')

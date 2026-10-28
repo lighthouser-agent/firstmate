@@ -166,11 +166,11 @@ test_bootstrap_follows_relay_and_no_mistakes_switches() {
   chmod +x "$fakebin/no-mistakes"
   out=$(PATH="$fakebin:$PATH" FM_HOME=$on "$ROOT/bin/fm-bootstrap.sh" 2>/dev/null)
   assert_contains "$out" "FMX: X mode on" "an undeclared home must keep Relay"
-  assert_contains "$out" "MISSING: no-mistakes" "an undeclared home must keep the no-mistakes floor"
+  assert_contains "$out" "OUTDATED: no-mistakes" "an undeclared home must keep the no-mistakes floor"
   out=$(PATH="$fakebin:$PATH" FM_HOME=$off "$ROOT/bin/fm-bootstrap.sh" 2>/dev/null)
   assert_not_contains "$out" "FMX: X mode on" "relay=off must keep Relay off despite a token"
   [ ! -e "$off/config/x-mode.env" ] || fail "relay=off must not write the Relay cadence"
-  assert_not_contains "$out" "MISSING: no-mistakes" "no-mistakes=off must not require the tool"
+  assert_not_contains "$out" "OUTDATED: no-mistakes" "no-mistakes=off must not require the tool"
   pass "bootstrap follows the relay and no-mistakes switches"
 }
 

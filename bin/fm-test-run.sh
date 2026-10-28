@@ -2474,6 +2474,9 @@ declare -a WORKER_SCRIPTS=()
 # Invoked indirectly by the EXIT trap below.
 # shellcheck disable=SC2329
 cleanup_run() {
+  if [ -d "$RUN_TMP" ] && [ ! -L "$RUN_TMP" ]; then
+    find "$RUN_TMP" -type d -exec chmod u+w {} + 2>/dev/null || true
+  fi
   rm -rf "$RUN_TMP"
 }
 

@@ -15,6 +15,8 @@ set -u
 
 # shellcheck source=tests/wake-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$ROOT/bin/fm-timeout-lib.sh"
 
 HOST="$ROOT/bin/fm-supervision-host.sh"
 REPORT="$ROOT/bin/fm-branch-report.sh"
@@ -947,7 +949,7 @@ test_host_stopped_right_after_a_handled_wake_exits_and_frees_the_queue() {
   kill -TERM "$pid" 2>/dev/null || true
   wait_until 100 bash -c '! kill -0 "$1" 2>/dev/null' _ "$pid" \
     || fail "handled then TERM: the host did not exit within 10s of TERM after a handled wake"
-  FM_HOME="$home" timeout 10 bash -c '. "$1"; fm_wake_append check probe "check: probe"' _ "$ROOT/bin/fm-wake-lib.sh" \
+  FM_HOME="$home" fm_run_timed 10 bash -c '. "$1"; fm_wake_append check probe "check: probe"' _ "$ROOT/bin/fm-wake-lib.sh" \
     || fail "handled then TERM: the stopped host left the wake queue lock held"
   stop_home_processes "$home"
   pass "host: a host stopped right after a handled wake exits and leaves the wake queue usable"
@@ -2707,7 +2709,7 @@ test_engine_conversation_the_next_turn_would_not_resume_is_not_compacted() {
     FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" start_host "$home"
   wait_until 150 watcher_live "$home" || fail "warm-compact-stale: no watcher started"
   seed_idle_engine_record "$home" 600
-  sed -i 's/^model=.*/model=another-model/' "$home/state/.supervision-host-engine"
+  perl -pi -e 's/^model=.*/model=another-model/' "$home/state/.supervision-host-engine"
   echo 10 > "$home/park-clock"
   sleep 3
   [ "$(compact_calls "$home")" = 0 ] || fail "warm-compact-stale: compacted a conversation the next turn would not resume"
