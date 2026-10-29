@@ -126,6 +126,7 @@ set -u
 printf '{"tool":"treehouse","args":"%s","cwd":"%s"}\n' "$*" "$PWD" >> "${FM_T3_TREEHOUSE_LOG:?}"
 case "${1:-}" in
   get)
+    case " $* " in *" --lease "*) ;; *) exit 0 ;; esac
     # FM_T3_TREEHOUSE_GET_WORLD changes the fake T3 world while the slot is
     # leased, the moment a real T3 could restart.
     if [ -n "${FM_T3_TREEHOUSE_GET_WORLD:-}" ]; then

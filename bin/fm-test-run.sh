@@ -781,6 +781,7 @@ tests/fm-dispatch-resolve.test.sh 10051
 tests/fm-documentation-audiences.test.sh 1301
 tests/fm-dod-lib.test.sh 2035
 tests/fm-extension-binding.test.sh 11105
+tests/fm-features.test.sh 14200
 tests/fm-fleet-ledger.test.sh 19980
 tests/fm-fleet-snapshot-view.test.sh 23334
 tests/fm-fleet-sync.test.sh 40541
@@ -940,6 +941,7 @@ tests/fm-watch-wedge-cap-live.test.sh 74
 tests/fm-watcher-lock.test.sh 72022
 tests/fm-worker-account-live-e2e.test.sh 3179
 tests/fm-worker-account.test.sh 37445
+tests/fm-worktree-env-sync.test.sh 3823
 EOF
 }
 
