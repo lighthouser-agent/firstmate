@@ -1275,7 +1275,7 @@ test_spawn_codex_refuses_tracked_codex_config() {
   assert_contains "$out" ".codex/config.toml" "the refusal must name the tracked file"
   assert_contains "$out" "[shell_environment_policy]" "the refusal must name the policy table"
   [ -z "$(t3_dispatch_types)" ] || fail "the refusal must come before any T3 mutation, got '$(t3_dispatch_types)'"
-  [ "$(t3_log_line_of 'r.tool === "treehouse"')" -eq 0 ] || fail "the refusal must come before the slot is leased"
+  [ "$(t3_log_line_of 'r.tool === "treehouse" && r.args.includes("--lease")')" -eq 0 ] || fail "the refusal must come before the slot is leased"
   assert_absent "$state/$id.meta" "a refused spawn records nothing"
   pass "fm-spawn.sh --backend t3code codex: refuses to overwrite a project's tracked .codex/config.toml before any mutation"
 }
@@ -1395,7 +1395,7 @@ test_spawn_claude_refuses_tracked_claude_local_md() {
   expect_code 1 "$rc" "a claude t3code spawn must refuse a project that tracks CLAUDE.local.md"$'\n'"$out"
   assert_contains "$out" "tracks CLAUDE.local.md" "the refusal must name the tracked file"
   [ -z "$(t3_dispatch_types)" ] || fail "the refusal must come before any T3 mutation, got '$(t3_dispatch_types)'"
-  [ "$(t3_log_line_of 'r.tool === "treehouse"')" -eq 0 ] || fail "the refusal must come before the slot is leased"
+  [ "$(t3_log_line_of 'r.tool === "treehouse" && r.args.includes("--lease")')" -eq 0 ] || fail "the refusal must come before the slot is leased"
   assert_absent "$state/$id.meta" "a refused spawn records nothing"
   pass "fm-spawn.sh --backend t3code claude: refuses to overwrite a project's tracked CLAUDE.local.md before any mutation"
 }
@@ -1814,7 +1814,7 @@ test_spawn_refuses_t3code_when_token_rejected() {
   [ "$status" -ne 0 ] || fail "fm-spawn.sh --backend t3code should refuse when the T3 server rejects the credential"
   assert_contains "$out" "signs in again" "the refusal must name the fresh sign-in"
   assert_absent "$state/$id.meta" "a runtime refusal must not record metadata"
-  [ "$(t3_log_line_of 'r.tool === "treehouse"')" -eq 0 ] || fail "spawn must refuse before leasing a slot"
+  [ "$(t3_log_line_of 'r.tool === "treehouse" && r.args.includes("--lease")')" -eq 0 ] || fail "spawn must refuse before leasing a slot"
   [ -z "$(t3_dispatch_types)" ] || fail "spawn must refuse before dispatching anything"
   pass "fm-spawn.sh --backend t3code: refuses before mutation when the credential is rejected"
 }
@@ -1854,7 +1854,7 @@ test_spawn_refuses_launch_settings_t3_cannot_honor() {  # <config-file> <content
   expect_code 1 "$rc" "a t3code $harness spawn must refuse config/$file=$content"$'\n'"$out"
   assert_contains "$out" "$expect" "the refusal must name config/$file"
   [ -z "$(t3_dispatch_types)" ] || fail "the refusal must come before any T3 mutation, got '$(t3_dispatch_types)'"
-  [ "$(t3_log_line_of 'r.tool === "treehouse"')" -eq 0 ] || fail "the refusal must come before the slot is leased"
+  [ "$(t3_log_line_of 'r.tool === "treehouse" && r.args.includes("--lease")')" -eq 0 ] || fail "the refusal must come before the slot is leased"
   assert_absent "$CASE_DIR/state/$id.meta" "a refused spawn records nothing"
   pass "fm-spawn.sh --backend t3code $harness: refuses config/$file=$content it cannot honor before any mutation"
 }
@@ -1883,7 +1883,7 @@ test_spawn_refuses_raw_launch_command() {
   expect_code 1 "$rc" "a t3code spawn must refuse a raw launch command"$'\n'"$out"
   assert_contains "$out" "backend=t3code cannot run a raw launch command" "the refusal must name the raw launch command"
   [ -z "$(t3_dispatch_types)" ] || fail "the refusal must come before any T3 mutation, got '$(t3_dispatch_types)'"
-  [ "$(t3_log_line_of 'r.tool === "treehouse"')" -eq 0 ] || fail "the refusal must come before the slot is leased"
+  [ "$(t3_log_line_of 'r.tool === "treehouse" && r.args.includes("--lease")')" -eq 0 ] || fail "the refusal must come before the slot is leased"
   assert_absent "$CASE_DIR/state/$id.meta" "a refused spawn records nothing"
   pass "fm-spawn.sh --backend t3code: refuses a raw launch command before any mutation"
 }

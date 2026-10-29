@@ -369,18 +369,17 @@ STUB
         "$mode: $contract omitted the clean-before-done rule"
     done
 
-    # Compare the public outputs of both real generation paths. The promoted
-    # payload ends at its Definition of done, as does an ordinary generated
-    # brief, so identical suffixes prove both workers receive the same contract.
+    # Compare only the delivery contract; ordinary briefs may append shared
+    # machine instructions after this section.
     rm "$home/data/$id/brief.md"
     FM_HOME="$home" "$BRIEF" "$id" fixture-project --mode "$mode" >/dev/null 2>&1 \
       || fail "$mode: ordinary ship brief generation should succeed"
     brief_dod="$TMP_ROOT/promote-dod/brief-dod-$id"
     delivered_dod="$TMP_ROOT/promote-dod/delivered-dod-$id"
-    awk '/^# Definition of done$/ { emit=1 } emit' "$home/data/$id/brief.md" > "$brief_dod"
-    awk '/^# Definition of done$/ { emit=1 } emit' "$payload" > "$delivered_dod"
+    awk '/^# Definition of done$/ { emit=1 } emit && /^# / && $0 != "# Definition of done" { exit } emit' "$home/data/$id/brief.md" | perl -0pe 's/\n+\z/\n/' > "$brief_dod"
+    awk '/^# Definition of done$/ { emit=1 } emit && /^# / && $0 != "# Definition of done" { exit } emit' "$payload" | perl -0pe 's/\n+\z/\n/' > "$delivered_dod"
     cmp -s "$brief_dod" "$delivered_dod" \
-      || fail "$mode: promotion and ordinary brief generation delivered different Definitions of done"
+      || { diff -u "$brief_dod" "$delivered_dod"; fail "$mode: promotion and ordinary brief generation delivered different Definitions of done"; }
   done
 
   payload="$TMP_ROOT/promote-dod/payload-promote-dod-no-mistakes"
@@ -1577,8 +1576,8 @@ STUB
   rm "$home/data/$id/brief.md"
   FM_HOME="$home" "$BRIEF" "$id" proj --mode no-mistakes --forge gerrit >/dev/null 2>&1 \
     || fail "ordinary gerrit ship brief generation should succeed"
-  awk '/^# Definition of done$/ { emit=1 } emit' "$home/data/$id/brief.md" > "$TMP_ROOT/forge-promote/brief-dod"
-  awk '/^# Definition of done$/ { emit=1 } emit' "$payload" > "$TMP_ROOT/forge-promote/delivered-dod"
+  awk '/^# Definition of done$/ { emit=1 } emit && /^# / && $0 != "# Definition of done" { exit } emit' "$home/data/$id/brief.md" | perl -0pe 's/\n+\z/\n/' > "$TMP_ROOT/forge-promote/brief-dod"
+  awk '/^# Definition of done$/ { emit=1 } emit && /^# / && $0 != "# Definition of done" { exit } emit' "$payload" | perl -0pe 's/\n+\z/\n/' > "$TMP_ROOT/forge-promote/delivered-dod"
   cmp -s "$TMP_ROOT/forge-promote/brief-dod" "$TMP_ROOT/forge-promote/delivered-dod" \
     || fail "promotion and ordinary brief generation delivered different gerrit contracts"
   pass "fm-promote: a promoted worker receives the project's registered forge contract with no flag to remember"

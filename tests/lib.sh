@@ -553,6 +553,27 @@ fm_fakebin() {
   printf '%s\n' "$fakebin"
 }
 
+# Windows uname fixtures also need GNU stat semantics when hosted on Darwin.
+fm_fake_gnu_stat() {  # <fakebin>
+  [ "$(/usr/bin/uname -s)" = Darwin ] || return 0
+  cat > "$1/stat" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = -c ]; then
+  format=$2
+  shift 2
+  case "$format" in
+    %Y) exec /usr/bin/stat -f %m "$@" ;;
+    %s:%Y) exec /usr/bin/stat -f %z:%m "$@" ;;
+    %a) exec /usr/bin/stat -f %Lp "$@" ;;
+  esac
+  printf 'unsupported fixture stat format: %s\n' "$format" >&2
+  exit 1
+fi
+exec /usr/bin/stat "$@"
+SH
+  chmod +x "$1/stat"
+}
+
 fm_fake_exit0() {
   local fakebin=$1 tool
   shift

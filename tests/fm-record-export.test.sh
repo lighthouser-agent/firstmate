@@ -484,7 +484,7 @@ test_archive_refuses_a_corrupt_committed_manifest() {
       extra-root) sed '/"complete": true/a\
   "unexpected": true,
 ' "$manifest" > "$home/manifest.tmp" ;;
-      extra-entry) sed '0,/"sha256": "[^"]*"/s//& , "unexpected": true/' "$manifest" > "$home/manifest.tmp" ;;
+      extra-entry) perl -0pe 's/"sha256": "[^"]*"/$& , "unexpected": true/' "$manifest" > "$home/manifest.tmp" ;;
     esac
     mv "$home/manifest.tmp" "$manifest"
     rc=0
@@ -572,7 +572,7 @@ test_archive_retry_removes_stale_files_from_a_partial_generation() {
 }
 
 test_archive_revalidates_sources_immediately_before_publication() {
-  local home export_root archive archive_pid rc=0 wait_count=0 index
+  local home export_root archive rc=0
   home=$(make_home archive-final-revalidate)
   export_root="$TMP_ROOT/export-archive-final-revalidate"
   printf '%s\n' "$export_root" > "$home/config/record-export-root"
@@ -581,24 +581,34 @@ test_archive_revalidates_sources_immediately_before_publication() {
     || fail "final revalidation setup could not initialize its root: $(cat "$home/sync.err")"
   archive="$export_root/archive/task-a/final-revalidate-generation"
   mkdir -p "$archive/inbox"
-  index=0
-  while [ "$index" -lt 10000 ]; do
-    printf 'stale %s\n' "$index" > "$archive/inbox/$(printf '%05d' "$index").msg"
-    index=$((index + 1))
-  done
+  printf 'stale bytes\n' > "$archive/inbox/00000.msg"
+  mkdir "$home/python-fixture"
+  # Synchronize the writer with the first stale-file deletion rather than
+  # relying on directory enumeration order or a polling window.
+  cat > "$home/python-fixture/sitecustomize.py" <<'PY'
+import os
 
-  run_export "$home" archive-task task-a > "$home/archive.out" 2> "$home/archive.err" &
-  archive_pid=$!
-  while [ -e "$archive/inbox/00000.msg" ]; do
-    kill -0 "$archive_pid" 2>/dev/null || break
-    wait_count=$((wait_count + 1))
-    [ "$wait_count" -le 1000 ] || break
-    sleep 0.01
-  done
-  [ ! -e "$archive/inbox/00000.msg" ] \
-    || { wait "$archive_pid" || true; fail "archive did not begin replacing its stale partial generation"; }
-  printf 'changed after final comparison\n' >> "$home/state/task-a.status"
-  wait "$archive_pid" || rc=$?
+unlink = os.unlink
+target = os.stat(os.environ["FM_TEST_STALE_INBOX"])
+mutated = False
+
+def mutate_on_unlink(path, *, dir_fd=None):
+    global mutated
+    if dir_fd is not None and not mutated:
+        current = os.fstat(dir_fd)
+        if (current.st_dev, current.st_ino) == (target.st_dev, target.st_ino):
+            with open(os.environ["FM_TEST_STATUS"], "a") as status:
+                status.write("changed during stale-generation replacement\n")
+            mutated = True
+    return unlink(path, dir_fd=dir_fd)
+
+os.unlink = mutate_on_unlink
+PY
+  PYTHONPATH="$home/python-fixture" FM_TEST_STALE_INBOX="$archive/inbox" \
+    FM_TEST_STATUS="$home/state/task-a.status" \
+    run_export "$home" archive-task task-a > "$home/archive.out" 2> "$home/archive.err" || rc=$?
+  assert_grep 'changed during stale-generation replacement' "$home/state/task-a.status" \
+    "archive fixture never mutated the source during stale-file deletion: $(cat "$home/archive.err")"
   [ "$rc" -ne 0 ] || fail "archive committed after a source changed during stale-generation replacement"
   assert_absent "$archive/manifest.v1.json" "archive committed a manifest after its final source comparison"
   assert_present "$home/state/task-a.meta" "final comparison race removed live metadata"
