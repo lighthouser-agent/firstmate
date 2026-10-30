@@ -556,6 +556,35 @@ test_primary_update_rebinds_local_watch() {
   pass "T12 a self-update rebinds a locally armed watch on the primary"
 }
 
+test_primary_divergence() {
+  local w out before
+  w=$(new_world primary-redundant)
+  printf 'equivalent\n' > "$w/main/landed.txt"
+  git -C "$w/main" add landed.txt
+  git -C "$w/main" commit -qm local-patch
+  printf 'equivalent\n' > "$w/seed/landed.txt"
+  git -C "$w/seed" add landed.txt
+  git -C "$w/seed" commit -qm upstream-patch
+  git -C "$w/seed" push -q origin main
+  out=$(run_update "$w")
+  assert_contains "$out" 'firstmate: reconciled redundant divergence' 'primary redundant patch reconciled'
+  assert_equals "$(git -C "$w/main" rev-parse HEAD)" "$(git -C "$w/seed" rev-parse HEAD)" 'primary reached upstream'
+  assert_equals "$(git -C "$w/main" symbolic-ref --short HEAD)" main 'primary stays on main'
+
+  w=$(new_world primary-unique)
+  printf 'unique\n' > "$w/main/local.txt"
+  git -C "$w/main" add local.txt
+  git -C "$w/main" commit -qm unique-patch
+  before=$(git -C "$w/main" rev-parse HEAD)
+  bump_origin "$w" instr
+  out=$(run_update "$w")
+  assert_contains "$out" 'firstmate: skipped: diverged from origin/main' 'unique primary patch refused'
+  assert_equals "$(git -C "$w/main" rev-parse HEAD)" "$before" 'unique commit preserved'
+  assert_equals "$(< "$w/main/local.txt")" unique 'unique content preserved'
+  pass 'primary reconciles patch-equivalent divergence but preserves unique commits'
+}
+
+test_primary_divergence
 test_updates_main_and_secondmate
 test_reread_gate_is_instruction_only
 test_bin_only_advance_restarts

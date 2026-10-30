@@ -87,6 +87,18 @@ REMOTE_STATE="$REMOTE/state"
 PLAIN_STATE="$PLAIN/state"
 LOCAL_STATE="$LOCAL_MATE/state"
 
+# Standalone callers must not need to know the parent-channel dependency.
+mkdir -p "$REMOTE/config"
+touch "$REMOTE/config/parent-captain-direct"
+bash -eu -c '
+  . "$1/bin/fm-secondmate-direct-lib.sh"
+  fm_secondmate_direct_home "$2"
+  . "$1/bin/fm-secondmate-direct-lib.sh"
+  fm_secondmate_direct_home "$2"
+' _ "$ROOT" "$REMOTE" || fail 'standalone direct-home lookup failed'
+rm "$REMOTE/config/parent-captain-direct"
+pass 'direct-home lookup works standalone and after repeated sourcing'
+
 # --- unit: the exclusion predicates -----------------------------------------
 
 test_predicate_resolves_only_the_remote_channel() {
